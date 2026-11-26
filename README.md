@@ -10,14 +10,14 @@ A web-portal bridge for Bibliotheek AanZet, built while official Wise API access
 - Reservation lists for standard, first-available and sequential holds. Populated reservation layouts still need live verification.
 - Links to Wise to renew books and manage reservations. This version never renews, places or cancels anything itself.
 
-This is an early implementation, **not yet verified on a Home Assistant installation**. The loan selectors are based on an inspected AanZet portal. Only the Dutch layout and physical materials are supported. E-books and audiobooks are not included. Sessions expire; reconnect using the helper when prompted. Home Assistant reminders are automations you create from the sensors, not notifications automatically enabled by the add-on.
+This is an early implementation, installed and running on Home Assistant OS. A real library session import is still required before live loan syncing is verified. The loan selectors are based on an inspected AanZet portal. Only the Dutch layout and physical materials are supported. E-books and audiobooks are not included. Sessions expire; reconnect using the helper when prompted. Home Assistant reminders are automations you create from the sensors, not notifications automatically enabled by the add-on.
 
-Local validation: 14 automated tests passed, including a real Chromium reader run with controlled network fixtures and HTTP ingress/session checks. The container image build was not run because the local Docker engine was unavailable. No real account session has been imported into this add-on yet.
+Local validation: 14 automated tests passed, including a real Chromium reader run with controlled network fixtures and HTTP ingress/session checks. The container image built successfully on Home Assistant OS, the ingress panel loaded, MQTT connected and all five sensors were discovered. No real account session has been imported into this add-on yet.
 
 ## Install locally in Home Assistant OS
 
 1. Install/configure a broker (for example Mosquitto) and Home Assistant's MQTT integration.
-2. Copy the `wise_library` directory into `/addons/wise_library` on the Home Assistant host. Reload the app/add-on store and install **Wise Library** from the local section. The initial Chromium image build may take several minutes.
+2. Copy the `wise_library` directory into `/local_apps/wise_library` on current Home Assistant OS (`/addons/wise_library` on older versions). Reload the app/add-on store and install **Wise Library** from the local section. The initial Chromium image build may take several minutes.
 3. Set the MQTT host, port and credentials in add-on options. Default host is `core-mosquitto`. The initial supported target is the AanZet portal with `branch_id: "2709"` (the route inspected during development; not an asserted physical-branch identifier).
 4. Start the add-on and open **Library** in the sidebar.
 5. Generate a session file on your own computer using the helper below, then import it in the Library panel. A successful read creates one MQTT device with five sensors. Refresh failures mark the sensors unavailable rather than reporting zero books.
@@ -55,9 +55,7 @@ The add-on polls hourly by default (minimum 15 minutes). A failed read keeps the
 
 ## Roadmap
 
-1. Verify a real login export/import and run against Home Assistant with MQTT.
+1. Verify a real login export/import and live loans; the Home Assistant installation and MQTT discovery have been verified.
 2. Verify populated hold lists with a willing test account; preserve displayed status until pickup-state parsing is proven.
 3. Add explicit, confirmed reservation/renewal actions using verified portal flows.
 4. Replace the portal reader with the official API when OCLC grants application access. See [API research](docs/api-research.md).
-
-
