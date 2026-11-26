@@ -1,0 +1,9 @@
+.venv/
+.browsers/
+__pycache__/
+*.pyc
+.data/
+*storage-state*.json
+*session*.json
+*.log
+dist/
