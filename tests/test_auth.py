@@ -7,18 +7,23 @@ from unittest.mock import patch
 from urllib.parse import parse_qs
 from playwright.async_api import Browser
 from wise_library.app.portal import Portal
-from wise_library.app.domain import PortalError
+from wise_library.app.domain import AuthenticationError, PortalError
 
 LOANS = '''<html><body><a>Uitloggen</a><p>Totaal geleend: 1</p><app-publication-list-item><h4>Test novel</h4>
 Inleverdatum: 05-12-2026 | Van vestiging: Example | Exemplaar: 123</app-publication-list-item></body></html>'''
 HOLDS = '<html><body><a>Uitloggen</a>Je lijst is leeg</body></html>'
-LOGIN = '''<html><body><form method="POST"><label for="username">Username</label><input id="username" name="username">
+# Mirrors inloggen.kb.nl (Auth0): an invisible, unclickable default-submit button precedes the real one.
+LOGIN = '''<html><body><form method="POST">
+<button type="submit" value="default" aria-hidden="true" tabindex="-1" name="action"
+style="opacity:0 !important;position:absolute !important;pointer-events:none !important">Continue</button>
+<label for="username">Username</label><input id="username" name="username">
 <label for="password">Password</label><input id="password" type="password" name="password">
 <button type="submit" name="action" value="default">Continue</button></form>{error}</body></html>'''
 
 
 class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
-    async def run_portal(self, *, signed_in=False, reject=False, unsafe_action=False, saved_session=False):
+    async def run_portal(self, *, signed_in=False, reject=False, unsafe_action=False, saved_session=False,
+                         no_clickable_submit=False):
         self.assertIn('username', inspect.signature(Portal).parameters)
         self.posts = []
         original = Browser.new_context
@@ -38,6 +43,8 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
                     html = LOGIN.format(error='<p role="alert">Invalid login</p>' if self.posts else '')
                     if unsafe_action:
                         html = html.replace('method="POST"', 'method="POST" action="https://example.invalid/steal"')
+                    if no_clickable_submit:
+                        html = html.replace('<button type="submit" name="action" value="default">Continue</button>', '')
                     await route.fulfill(content_type='text/html', body=html)
                 elif not logged_in:
                     await route.fulfill(content_type='text/html', body='<script>location.replace("https://inloggen.kb.nl/u/login")</script>')
@@ -74,6 +81,12 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.posts), 1)
         self.assertNotIn('example-password', str(raised.exception))
         self.assertNotIn('example-reader', str(raised.exception))
+
+    async def test_unpressable_sign_in_button_submits_nothing_and_stays_retryable(self):
+        with self.assertRaises(PortalError) as raised:
+            await self.run_portal(no_clickable_submit=True)
+        self.assertNotIsInstance(raised.exception, AuthenticationError)
+        self.assertEqual(self.posts, [])
 
     async def test_credentials_never_post_to_foreign_form_action(self):
         self.assertIn('username', inspect.signature(Portal).parameters)

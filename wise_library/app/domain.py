@@ -35,6 +35,11 @@ def summarize(loans, today):
             "due_soon_count": sum(0 <= (d - today).days <= 3 for d in dates),
             "next_due_date": min(dates).isoformat() if dates else None}
 
+def library_only(state):
+    return {**state,
+            "cookies": [c for c in state["cookies"] if c.get("domain", "").lstrip(".") in ALLOWED_HOSTS],
+            "origins": [o for o in state["origins"] if urlsplit(o.get("origin", "")).hostname in ALLOWED_HOSTS]}
+
 def validate_session(state):
     if not isinstance(state, dict) or not isinstance(state.get("cookies"), list) or not isinstance(state.get("origins"), list):
         raise ValueError("Expected a Playwright storage-state file.")

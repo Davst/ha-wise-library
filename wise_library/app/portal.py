@@ -44,7 +44,14 @@ class Portal:
             raise AuthenticationError('The library requires a CAPTCHA. Sign in manually and import a session.')
         await form.locator('#username').fill(self.username)
         await form.locator('#password').fill(self.password)
-        await form.locator('button[type="submit"][name="action"][value="default"]:visible').first.click()
+        # Auth0 puts an invisible, pointer-events:none default-submit first; Playwright counts opacity:0 as visible.
+        submit = form.locator('button[type="submit"][name="action"][value="default"]:not([aria-hidden="true"])')
+        try:
+            await submit.click(timeout=10000)
+        except BrowserTimeout:
+            # Nothing was submitted, so the next poll may safely try again.
+            raise PortalError('The library sign-in button could not be pressed. '
+                              'Will retry at the next refresh.') from None
         try:
             await page.wait_for_function("""() =>
               (location.hostname === 'bibliotheek.wise.oclc.org' && document.body.innerText.includes('Totaal geleend:')) ||

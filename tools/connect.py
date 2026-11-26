@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from wise_library.app.domain import ALLOWED_HOSTS, PORTAL_HOST, validate_session
+from wise_library.app.domain import PORTAL_HOST, library_only, validate_session
 from wise_library.app.server import write_private
 
 
@@ -30,9 +30,7 @@ def main():
             input('When "Totaal geleend" is visible, press Enter here to save the session: ')
             if urlsplit(page.url).hostname != PORTAL_HOST or not page.get_by_text('Totaal geleend:', exact=False).is_visible():
                 raise SystemExit('No verified loan overview. Nothing was saved. Run the helper again after signing in.')
-            state = context.storage_state()
-            state['cookies'] = [cookie for cookie in state['cookies'] if cookie['domain'].lstrip('.') in ALLOWED_HOSTS]
-            state['origins'] = [origin for origin in state['origins'] if urlsplit(origin['origin']).hostname in ALLOWED_HOSTS]
+            state = library_only(context.storage_state())
             state['sessionStorage'] = page.evaluate('Object.fromEntries(Object.entries(sessionStorage))')
             validate_session(state)
             args.output.parent.mkdir(parents=True, exist_ok=True)

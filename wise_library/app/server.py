@@ -1,18 +1,22 @@
 import asyncio
 import json
+import logging
 import os
 import re
 import secrets
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from aiohttp import web
-from .domain import PortalError, AuthenticationError, summarize, validate_session
+from .domain import PortalError, AuthenticationError, library_only, summarize, validate_session
 from .bridge import MqttBridge
 from .portal import Portal
 
-STATIC = Path(__file__).parent / 'static'
+APP_DIR = Path(__file__).parent
+STATIC = APP_DIR / 'static'
+log = logging.getLogger('wise_library')
 DEFAULTS = {'branch_id':'2709', 'account_id':'home', 'poll_interval_minutes':60,
             'timezone':'Europe/Amsterdam', 'mqtt_host':'core-mosquitto', 'mqtt_port':1883,
             'mqtt_username':'', 'mqtt_password':'', 'library_username':'', 'library_password':''}
@@ -45,7 +49,7 @@ class Runtime:
         self.busy = True
         try:
             loans, reservations, refreshed = await self.portal.read()
-            write_private(self.data_dir / 'storage-state.json', validate_session(refreshed))
+            write_private(self.data_dir / 'storage-state.json', validate_session(library_only(refreshed)))
             now = datetime.now(ZoneInfo(self.options['timezone']))
             summary = summarize(loans, now.date())
             summary['reservation_count'] = len(reservations)
@@ -61,9 +65,13 @@ class Runtime:
         except PortalError as error:
             self.error = str(error)
             self.bridge.unavailable()
-        except Exception:
-            # Browser exceptions can contain URLs or auth details; do not return/log them.
-            self.error = 'Refresh failed. Check the session, network and supported Dutch portal layout.'
+        except Exception as error:
+            # Browser exception messages can contain URLs or auth details; log only the type and our code location.
+            frames = traceback.extract_tb(error.__traceback__)
+            frame = [f for f in frames if Path(f.filename).is_relative_to(APP_DIR)][-1]
+            log.error('Refresh failed: %s at %s:%s', type(error).__name__, Path(frame.filename).name, frame.lineno)
+            self.error = ('Refresh failed. Check the session, network and supported Dutch portal layout. '
+                          'Details are in the app log.')
             self.bridge.unavailable()
         finally:
             self.busy = False
@@ -146,6 +154,7 @@ def create_app(runtime, local=False):
 
 
 def main():
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     options = dict(DEFAULTS)
     config = Path(os.environ.get('WISE_OPTIONS', '/data/options.json'))
     if config.exists():
