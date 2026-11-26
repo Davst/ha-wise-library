@@ -1,0 +1,7 @@
+configuration:
+  library_username:
+    name: Library username
+    description: Your national library login username. Leave both login fields empty to use only an imported session.
+  library_password:
+    name: Library password
+    description: Stored locally in Home Assistant app options. Used only when the saved library session expires. Save and restart after changes.

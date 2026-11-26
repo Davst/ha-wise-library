@@ -8,14 +8,14 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from aiohttp import web
-from .domain import PortalError, summarize, validate_session
+from .domain import PortalError, AuthenticationError, summarize, validate_session
 from .bridge import MqttBridge
 from .portal import Portal
 
 STATIC = Path(__file__).parent / 'static'
 DEFAULTS = {'branch_id':'2709', 'account_id':'home', 'poll_interval_minutes':60,
             'timezone':'Europe/Amsterdam', 'mqtt_host':'core-mosquitto', 'mqtt_port':1883,
-            'mqtt_username':'', 'mqtt_password':''}
+            'mqtt_username':'', 'mqtt_password':'', 'library_username':'', 'library_password':''}
 
 
 def write_private(path, value):
@@ -34,10 +34,12 @@ class Runtime:
         self.error = None
         self.snapshot = None
         self.busy = False
+        self.auth_blocked = False
         self.last_requested = 0
         self.wake = asyncio.Event()
         self.bridge = MqttBridge(options)
-        self.portal = Portal(options['branch_id'], data_dir / 'storage-state.json')
+        self.portal = Portal(options['branch_id'], data_dir / 'storage-state.json',
+                             username=options.get('library_username', ''), password=options.get('library_password', ''))
 
     async def refresh(self):
         self.busy = True
@@ -51,6 +53,11 @@ class Runtime:
             self.snapshot = {**summary, 'loans':loans, 'reservations':reservations}
             self.bridge.update(summary, {'loans':loans, 'reservations':reservations, 'last_success':self.last_success})
             self.error = None
+            self.auth_blocked = False
+        except AuthenticationError as error:
+            self.error = str(error)
+            self.auth_blocked = True
+            self.bridge.unavailable()
         except PortalError as error:
             self.error = str(error)
             self.bridge.unavailable()
@@ -65,7 +72,8 @@ class Runtime:
         self.bridge.start()
         try:
             while True:
-                if (self.data_dir / 'storage-state.json').exists():
+                configured = bool(self.options.get('library_username') and self.options.get('library_password'))
+                if not self.auth_blocked and (configured or (self.data_dir / 'storage-state.json').exists()):
                     await self.refresh()
                 try:
                     await asyncio.wait_for(self.wake.wait(), self.options['poll_interval_minutes'] * 60)
@@ -99,6 +107,7 @@ def create_app(runtime, local=False):
 
     async def status(request):
         return web.json_response({'csrf':runtime.csrf, 'busy':runtime.busy, 'error':runtime.error,
+            'credentials_configured':bool(runtime.options.get('library_username') and runtime.options.get('library_password')),
             'last_success':runtime.last_success, 'mqtt_connected':runtime.bridge.connected,
             'session_present':(runtime.data_dir / 'storage-state.json').exists(), 'snapshot':runtime.snapshot,
             'portal_url':f"https://bibliotheek.wise.oclc.org/wise-apps/opac/branch/{runtime.options['branch_id']}/my-account"})
@@ -112,15 +121,18 @@ def create_app(runtime, local=False):
             raise web.HTTPBadRequest(text='Invalid session file or unsupported library hosts.') from None
         write_private(runtime.data_dir / 'storage-state.json', state)
         runtime.error = None
+        runtime.auth_blocked = False
         runtime.wake.set()
         return web.json_response({'ok':True})
 
     async def refresh(request):
-        if not (runtime.data_dir / 'storage-state.json').exists():
-            raise web.HTTPConflict(text='Connect a library session first.')
+        configured = bool(runtime.options.get('library_username') and runtime.options.get('library_password'))
+        if not configured and not (runtime.data_dir / 'storage-state.json').exists():
+            raise web.HTTPConflict(text='Enter your library credentials in the app Configuration tab, or import a session first.')
         if runtime.busy or time.monotonic() - runtime.last_requested < 60:
             raise web.HTTPTooManyRequests(text='Please wait one minute between refresh requests.')
         runtime.last_requested = time.monotonic()
+        runtime.auth_blocked = False
         runtime.wake.set()
         return web.json_response({'ok':True})
 

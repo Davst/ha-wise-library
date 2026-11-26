@@ -13,10 +13,10 @@ async function status() {
     el('mqtt').textContent = 'Home Assistant · MQTT ' + (data.mqtt_connected ? 'connected' : 'disconnected');
     el('notice').hidden = !data.error;
     el('notice').textContent = data.error ? data.error + (data.last_success ? ' The books below are from the last successful sync.' : '') : '';
-    el('refresh').disabled = busy || !data.session_present;
+    el('refresh').disabled = busy || (!data.session_present && !data.credentials_configured);
     el('manage').hidden = false; el('manage').href = data.portal_url + '/my-holds';
-    el('session-title').textContent = data.session_present ? 'Your session is saved.' : 'Bring your library home.';
-    el('updated').textContent = data.last_success ? 'Last successful sync · ' + new Date(data.last_success).toLocaleString() : data.session_present ? 'Session imported. Waiting for the first successful sync…' : 'Connect your account to bring your reading pile home.';
+    el('session-title').textContent = data.credentials_configured ? 'Automatic sign-in is configured.' : data.session_present ? 'Your session is saved.' : 'Connect in Home Assistant settings.';
+    el('updated').textContent = data.last_success ? 'Last successful sync · ' + new Date(data.last_success).toLocaleString() : data.credentials_configured ? 'Credentials configured. Waiting for the first successful sync…' : data.session_present ? 'Session imported. Waiting for the first successful sync…' : 'Enter your library credentials in the app Configuration tab to connect.';
     if (!data.snapshot) return;
     const s = data.snapshot;
     el('loan-count').textContent = s.loan_count; el('due-count').textContent = s.due_soon_count;

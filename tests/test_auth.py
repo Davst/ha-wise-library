@@ -1,0 +1,82 @@
+import inspect
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+from urllib.parse import parse_qs
+from playwright.async_api import Browser
+from wise_library.app.portal import Portal
+from wise_library.app.domain import PortalError
+
+LOANS = '''<html><body><a>Uitloggen</a><p>Totaal geleend: 1</p><app-publication-list-item><h4>Test novel</h4>
+Inleverdatum: 05-12-2026 | Van vestiging: Example | Exemplaar: 123</app-publication-list-item></body></html>'''
+HOLDS = '<html><body><a>Uitloggen</a>Je lijst is leeg</body></html>'
+LOGIN = '''<html><body><form method="POST"><label for="username">Username</label><input id="username" name="username">
+<label for="password">Password</label><input id="password" type="password" name="password">
+<button type="submit" name="action" value="default">Continue</button></form>{error}</body></html>'''
+
+
+class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
+    async def run_portal(self, *, signed_in=False, reject=False, unsafe_action=False, saved_session=False):
+        self.assertIn('username', inspect.signature(Portal).parameters)
+        self.posts = []
+        original = Browser.new_context
+        logged_in = signed_in
+        async def fixture_context(browser, **kwargs):
+            context = await original(browser, **kwargs)
+            async def respond(route):
+                nonlocal logged_in
+                url = route.request.url
+                if 'inloggen.kb.nl' in url:
+                    if route.request.method == 'POST':
+                        self.posts.append(parse_qs(route.request.post_data))
+                        if not reject:
+                            logged_in = True
+                            await route.fulfill(content_type='text/html', body='<script>location.replace("https://bibliotheek.wise.oclc.org/wise-apps/opac/branch/2709/my-account/checkouts/physical-materials")</script>')
+                            return
+                    html = LOGIN.format(error='<p role="alert">Invalid login</p>' if self.posts else '')
+                    if unsafe_action:
+                        html = html.replace('method="POST"', 'method="POST" action="https://example.invalid/steal"')
+                    await route.fulfill(content_type='text/html', body=html)
+                elif not logged_in:
+                    await route.fulfill(content_type='text/html', body='<script>location.replace("https://inloggen.kb.nl/u/login")</script>')
+                else:
+                    await route.fulfill(content_type='text/html', body=LOANS if '/checkouts/' in url else HOLDS)
+            await context.route('**/*', respond)
+            return context
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'state.json'
+            if signed_in or saved_session:
+                path.write_text(json.dumps({'cookies':[], 'origins':[]}))
+            with patch.object(Browser, 'new_context', fixture_context):
+                return await Portal('2709', path, username='example-reader', password='example-password').read()
+
+    async def test_cold_start_signs_in_without_session_file(self):
+        loans, holds, state = await self.run_portal()
+        self.assertEqual(loans[0]['title'], 'Test novel')
+        self.assertEqual(len(self.posts), 1)
+        self.assertEqual(self.posts[0]['username'], ['example-reader'])
+        self.assertEqual(self.posts[0]['password'], ['example-password'])
+
+    async def test_expired_saved_session_signs_in_again(self):
+        await self.run_portal(saved_session=True)
+        self.assertEqual(len(self.posts), 1)
+
+    async def test_working_session_skips_password_login(self):
+        await self.run_portal(signed_in=True)
+        self.assertEqual(self.posts, [])
+
+    async def test_rejected_password_is_not_retried_or_echoed(self):
+        self.assertIn('username', inspect.signature(Portal).parameters)
+        with self.assertRaises(PortalError) as raised:
+            await self.run_portal(reject=True)
+        self.assertEqual(len(self.posts), 1)
+        self.assertNotIn('example-password', str(raised.exception))
+        self.assertNotIn('example-reader', str(raised.exception))
+
+    async def test_credentials_never_post_to_foreign_form_action(self):
+        self.assertIn('username', inspect.signature(Portal).parameters)
+        with self.assertRaises(PortalError):
+            await self.run_portal(unsafe_action=True)
+        self.assertEqual(self.posts, [])

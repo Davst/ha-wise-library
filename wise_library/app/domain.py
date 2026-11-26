@@ -3,10 +3,13 @@ from datetime import date
 from urllib.parse import urlsplit
 
 PORTAL_HOST = "bibliotheek.wise.oclc.org"
-ALLOWED_HOSTS = {PORTAL_HOST, "iam-emea.wise.oclc.org", "emea-iam.wise.oclc.org", "login.bibliotheek.nl"}
+ALLOWED_HOSTS = {PORTAL_HOST, "wise.oclc.org", "iam-emea.wise.oclc.org", "emea-iam.wise.oclc.org", "login.bibliotheek.nl", "inloggen.kb.nl"}
 
 class PortalError(Exception):
     pass
+
+class AuthenticationError(PortalError):
+    """Stop automatic retries until the user changes settings or requests a retry."""
 
 def parse_loans(rows, text):
     total = re.search(r"Totaal geleend:\s*(\d+)", text)

@@ -1,4 +1,5 @@
 import tempfile
+import asyncio
 import unittest
 from pathlib import Path
 from aiohttp.test_utils import TestClient, TestServer
@@ -14,6 +15,9 @@ class FakeRuntime:
         self.error = None
         self.snapshot = None
         self.busy = False
+        self.last_requested = 0
+        self.wake = asyncio.Event()
+        self.auth_blocked = False
         self.bridge = type('Bridge', (), {'connected':False})()
 
 
@@ -34,6 +38,22 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
         result = await response.json()
         self.assertFalse(result['session_present'])
         self.assertIsNone(result['snapshot'])
+
+    async def test_status_reports_credentials_without_exposing_them(self):
+        self.runtime.options.update({'library_username':'private-reader', 'library_password':'private-password'})
+        response = await self.client.get('/api/status')
+        text = await response.text()
+        self.assertNotIn('private-reader', text)
+        self.assertNotIn('private-password', text)
+        self.assertTrue((await response.json()).get('credentials_configured', False))
+
+    async def test_manual_retry_works_without_session_and_clears_auth_pause(self):
+        self.runtime.options.update({'library_username':'private-reader', 'library_password':'private-password'})
+        self.runtime.auth_blocked = True
+        response = await self.client.post('/api/refresh', json={}, headers={'X-CSRF-Token':'test-csrf'})
+        self.assertEqual(response.status, 200)
+        self.assertFalse(self.runtime.auth_blocked)
+        self.assertTrue(self.runtime.wake.is_set())
 
     async def test_session_upload_requires_csrf(self):
         response = await self.client.post('/api/session', json={'cookies':[], 'origins':[]})

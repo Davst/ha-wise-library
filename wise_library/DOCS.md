@@ -1,6 +1,6 @@
 # Setup
 
-See the project README for the local installation and session helper. Configure your MQTT broker in the add-on options, then import the helper's session JSON in the sidebar panel. You never need to enter a library password in add-on options.
+See the project README for the local installation and session helper. Configure your MQTT broker and the Library username/password in the app Configuration tab, then save and restart. Your credentials stay in Home Assistant app options. The password field is masked; backups may contain the password. Importing a session from the helper remains an optional fallback for additional sign-in verification.
 
 Only Bibliotheek AanZet's Dutch Wise portal is currently supported. `branch_id` selects a portal route, not necessarily the physical branch where books were borrowed. `account_id` must be unique for each running add-on/account; keep it stable to preserve entity IDs.
 

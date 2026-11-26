@@ -10,9 +10,9 @@ A web-portal bridge for Bibliotheek AanZet, built while official Wise API access
 - Reservation lists for standard, first-available and sequential holds. Populated reservation layouts still need live verification.
 - Links to Wise to renew books and manage reservations. This version never renews, places or cancels anything itself.
 
-This is an early implementation, installed and running on Home Assistant OS. A real library session import is still required before live loan syncing is verified. The loan selectors are based on an inspected AanZet portal. Only the Dutch layout and physical materials are supported. E-books and audiobooks are not included. Sessions expire; reconnect using the helper when prompted. Home Assistant reminders are automations you create from the sensors, not notifications automatically enabled by the add-on.
+This is an early implementation, installed and running on Home Assistant OS. Library credentials must be entered in Home Assistant before live loan syncing can be verified. The loan selectors are based on an inspected AanZet portal. Only the Dutch layout and physical materials are supported. E-books and audiobooks are not included. Sessions expire; reconnect using the helper when prompted. Home Assistant reminders are automations you create from the sensors, not notifications automatically enabled by the add-on.
 
-Local validation: 14 automated tests passed, including a real Chromium reader run with controlled network fixtures and HTTP ingress/session checks. The container image built successfully on Home Assistant OS, the ingress panel loaded, MQTT connected and all five sensors were discovered. No real account session has been imported into this add-on yet.
+Local validation: 22 automated tests passed, including a real Chromium reader run with controlled network fixtures and HTTP ingress/session checks. The container image built successfully on Home Assistant OS, the ingress panel loaded, MQTT connected and all five sensors were discovered. A real-account sign-in is still pending; browser authentication has been tested with controlled fixtures.
 
 ## Install locally in Home Assistant OS
 
@@ -20,11 +20,17 @@ Local validation: 14 automated tests passed, including a real Chromium reader ru
 2. Copy the `wise_library` directory into `/local_apps/wise_library` on current Home Assistant OS (`/addons/wise_library` on older versions). Reload the app/add-on store and install **Wise Library** from the local section. The initial Chromium image build may take several minutes.
 3. Set the MQTT host, port and credentials in add-on options. Default host is `core-mosquitto`. The initial supported target is the AanZet portal with `branch_id: "2709"` (the route inspected during development; not an asserted physical-branch identifier).
 4. Start the add-on and open **Library** in the sidebar.
-5. Generate a session file on your own computer using the helper below, then import it in the Library panel. A successful read creates one MQTT device with five sensors. Refresh failures mark the sensors unavailable rather than reporting zero books.
+5. In the app Configuration tab, enter **Library username** and **Library password**, save, then restart the app. It reuses the session and signs in again only when required. A successful read supplies all five sensors. If extra verification is required, use the optional session helper below instead.
 
 Source is maintained in the private repository https://github.com/Davst/ha-wise-library. Install the add-on from a local copy of the source so Home Assistant does not need a GitHub credential. Updates must be copied from the private repository and rebuilt locally.
 
-## Connect your library session
+## Sign in through Home Assistant
+
+Open **Settings → Apps → Wise Library → Configuration**. Set **Library username** and **Library password**, save and restart. The password is masked in the form and stored only in local app options; it is never returned by the Library panel, logged or committed. App backups may contain it, so protect those backups.
+
+The app follows the normal AanZet redirect to the national login at inloggen.kb.nl. It submits credentials only to that HTTPS host and checks the form destination first. It attempts one sign-in per refresh. A rejected login or additional verification pauses automatic retries; fix the settings and restart, or deliberately use Refresh library to retry. CAPTCHA and MFA are never bypassed.
+
+## Optional: import a library session
 
 From the project directory on a computer with Python 3.12+:
 
@@ -55,7 +61,7 @@ The add-on polls hourly by default (minimum 15 minutes). A failed read keeps the
 
 ## Roadmap
 
-1. Verify a real login export/import and live loans; the Home Assistant installation and MQTT discovery have been verified.
+1. Verify real-account automatic sign-in and live loans; Home Assistant installation and MQTT discovery have been verified.
 2. Verify populated hold lists with a willing test account; preserve displayed status until pickup-state parsing is proven.
 3. Add explicit, confirmed reservation/renewal actions using verified portal flows.
 4. Replace the portal reader with the official API when OCLC grants application access. See [API research](docs/api-research.md).
