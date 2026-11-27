@@ -1,3 +1,7 @@
+# 0.3.2
+
+Book spines in the detail view now use an illustrated binding: a crop of the book's cover above a matching color panel with its title rotated. Spines are larger (44 × 88 px) so the artwork and titles are easier to recognize; long titles truncate and remain available in the accessible label and tooltip. Light covers use dark title ink. Reservations use their own cover art and colors, and unavailable cover images fall back to the same drawn cover as the book.
+
 # 0.3.1
 
 Add trailing pothos, fern, flowers, a glass garden, warm tea and a ceramic bird as shelf companions. Plants remain still; the glass garden glimmers, tea steam rises and fades, and the curled sleeping cat breathes gently. Decoration bases sit on the shelf at every screen size, and the candle flame stays attached to its wick. Reduced-motion preferences stop ambient animations.

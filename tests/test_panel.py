@@ -237,6 +237,22 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(await self.page.locator("#shelves .book").count(), 3)
 
+    async def test_illustrated_spines_keep_titles_and_navigate_with_missing_cover_art(self):
+        self.runtime.snapshot = snapshot([
+            {**STORK, "isbn": "9781234567897", "cover": True}, CAMINO
+        ], [HOLD])
+        await self.open()
+        await self.page.locator('#shelves .slot[data-id="101"]').click()
+        spine = self.page.locator('#strip .spine[data-id="101"]')
+        await spine.locator('.spine-art svg').wait_for()
+        self.assertEqual(await spine.locator('.spine-title').inner_text(), STORK['title'])
+        size = await spine.bounding_box()
+        self.assertGreaterEqual(size['width'], 44)
+        self.assertGreaterEqual(size['height'], 88)
+        await self.page.locator('#strip .spine[data-id="102"]').click()
+        await self.page.wait_for_function("document.querySelector('#strip .spine.on').dataset.id === '102'")
+        self.assertEqual(await self.page.locator('#strip .spine.hold .spine-title').inner_text(), HOLD['title'])
+
     async def test_tapping_a_book_opens_it_alone_with_what_the_library_offers(self):
         await self.open()
         await self.page.click("#shelves .book >> nth=0")
@@ -303,6 +319,10 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await real.get_attribute("src")).endswith(f"/api/cover/{isbn}"))
         await self.page.locator("#shelves .slot >> nth=1 >> svg.art").wait_for()
         self.assertEqual(await self.page.locator("#shelves .book img.real").count(), 1)
+        await self.page.locator("#shelves .book").first.click()
+        await self.page.locator("#strip .spine-art svg.art").wait_for()
+        self.assertEqual(await self.page.locator("#strip .spine-art img.real").count(), 1)
+        self.assertEqual(await self.page.locator("#strip .spine-art svg.art").count(), 1)
 
     async def test_reservation_shows_the_portal_words_on_the_shelf_and_when_opened(self):
         await self.open()

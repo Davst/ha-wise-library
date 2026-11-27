@@ -245,9 +245,24 @@ function spine(item, kind, label, feed, index) {
   const button = node('button', `spine ${kind}`);
   button.type = 'button';
   button.dataset.id = item.id;
-  button.style.setProperty('--tint', tintOf(item));
-  whenTinted(item, color => button.style.setProperty('--tint', color));
+  const tint = color => {
+    button.style.setProperty('--tint', color);
+    const rgb = color.startsWith('#')
+      ? color.slice(1).match(/../g).map(part => parseInt(part, 16))
+      : color.match(/[\d.]+/g).map(Number);
+    const light = rgb[0] * .299 + rgb[1] * .587 + rgb[2] * .114;
+    button.style.setProperty('--spine-ink', light < 150 ? '#fff3da' : '#20180f');
+  };
+  tint(tintOf(item));
+  whenTinted(item, tint);
   button.setAttribute('aria-label', label);
+  button.title = item.title;
+  const art = node('span', 'spine-art');
+  art.setAttribute('aria-hidden', 'true');
+  art.append(coverFor(item));
+  const title = node('span', 'spine-title', item.title);
+  title.setAttribute('aria-hidden', 'true');
+  button.append(art, title);
   button.addEventListener('click', () => {
     feed.scrollTo({top: index * feed.clientHeight, behavior: calm() ? 'auto' : 'smooth'});
   });
