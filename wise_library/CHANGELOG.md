@@ -1,3 +1,7 @@
+## 0.3.3
+
+Covers now check Open Library by exact ISBN for a higher-resolution image, including books already cached. Smaller or missing images keep the Wise cover; temporary failures retry on a later refresh. Selecting a book gives its cover a gentle lift and settle, including navigation through the detail-view spines, with reduced motion respected.
+
 # 0.3.2
 
 Book spines in the detail view now use an illustrated binding: a crop of the book's cover above a matching color panel with its title rotated. Spines are larger (44 × 88 px) so the artwork and titles are easier to recognize; long titles truncate and remain available in the accessible label and tooltip. Light covers use dark title ink. Reservations use their own cover art and colors, and unavailable cover images fall back to the same drawn cover as the book.

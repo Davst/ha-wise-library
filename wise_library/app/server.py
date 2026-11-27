@@ -221,7 +221,7 @@ def create_app(runtime, local=False):
         kind = image_type(data)
         if not kind:
             raise web.HTTPNotFound()
-        return web.Response(body=data, content_type=kind, headers={"Cache-Control": "private, max-age=604800"})
+        return web.Response(body=data, content_type=kind, headers={"Cache-Control": "private, max-age=0, must-revalidate"})
 
     async def renew(request):
         try:

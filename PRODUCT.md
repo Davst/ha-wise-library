@@ -37,9 +37,9 @@ automations come from the home, not from another app or an email.
 - Loans carry a title, author, ISBN, a return date, the lending branch, the copy barcode (the app's id for a loan,
   because it survives a renewal) and whether the library offers a renewal and until when. Reservations carry a title
   and the portal's own status text, across three lists: standard, first-available and sequential.
-- Covers are the library's own images, fetched by ISBN from inside the signed-in page (the library refuses plain
-  scripts) and served from the app's data folder. A book with no cover, or the library's generic placeholder, gets a
-  drawn cover. The library has front covers only, so spines take the colour of the cover.
+- Covers start with the library's images, fetched by ISBN from inside the signed-in page. Open Library is checked
+  by exact ISBN once for a larger image; temporary failures retry later. Both are served from the app's data folder.
+  A book without either real cover gets a drawn cover. Spines take the colour of the front cover.
 - Renew and renew all work inside the app (verified on a real account 2026-11-27): the app clears the page's
   default selection, selects only the chosen loans, presses the portal's renew button and waits for its
   confirmation. Cancel reservation still opens Wise: no populated reservation list has been inspected.

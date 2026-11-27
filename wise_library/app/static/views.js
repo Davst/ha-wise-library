@@ -284,7 +284,16 @@ export function roomIndex(feed) {
 }
 
 export function markRoom(strip, index) {
+  const previous = strip.querySelector('.on');
   [...strip.children].forEach((button, at) => button.classList.toggle('on', at === index));
   const active = strip.children[index];
+  if (active && active !== previous && !calm()) {
+    const cover = document.querySelector('#feed').children[index]?.querySelector('.cover');
+    cover?.animate([
+      {transform: 'translateY(20px) rotate(-3deg) scale(.94)', opacity: .65},
+      {transform: 'translateY(-5px) rotate(1deg) scale(1.02)', opacity: 1, offset: .65},
+      {transform: 'none', opacity: 1},
+    ], {duration: 650, easing: 'cubic-bezier(.2,.75,.25,1)'});
+  }
   if (active) strip.scrollLeft = active.offsetLeft - strip.clientWidth / 2;
 }

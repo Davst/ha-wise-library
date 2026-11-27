@@ -136,7 +136,7 @@ Everything is dark only (`color-scheme: dark`). Light comes from above and is wa
 
 The server sends a Content Security Policy of `default-src 'self'; style-src 'self'; img-src 'self'`. That shapes the build: there are no inline styles, no `data:` URIs and no third-party assets. Cover images come from the app's own origin. Wood grain comes from two SVG files (`wood-h.svg`, `wood-v.svg`). Colour arrives through the stylesheet or through SVG presentation attributes. The one per-item value, a cover tint for a room page or a spine, is set as a custom property through the CSSOM. The three fonts are self-hosted woff2 files under the SIL Open Font License, with the licence texts beside them in `fonts/`.
 
-A book shows the library's real cover when the app holds one. It is an image served by the app itself at `/api/cover/<isbn>`, cropped to the 2:3 book shape from the top. When there is no cover, or the image fails to load, `covers.js` draws a fallback from the title alone: one of twelve palettes and one of eleven motifs, each chosen by a hash of the title, with seeded variation inside the motif and the title typeset in Caslon capitals. The same title always draws the same fallback. A drawn cover is an illustration made by the panel, not library data. Both kinds sit under the same hinge shadow, top highlight and page edge.
+A book shows a real cover when the app holds one. Open Library can replace the library image when its exact-ISBN cover is larger in both dimensions. It is an image served by the app itself at `/api/cover/<isbn>`, cropped to the 2:3 book shape from the top. When there is no cover, or the image fails to load, `covers.js` draws a fallback from the title alone: one of twelve palettes and one of eleven motifs, each chosen by a hash of the title, with seeded variation inside the motif and the title typeset in Caslon capitals. The same title always draws the same fallback. A drawn cover is an illustration made by the panel, not library data. Both kinds sit under the same hinge shadow, top highlight and page edge.
 
 The room page and the spine of a book take a tint from its cover: the average colour of the real cover, sampled on a small canvas once it has loaded, or the ground colour of the fallback palette.
 
@@ -279,7 +279,7 @@ One easing, `cubic-bezier(.2, .9, .2, 1)`, serves state changes. Ambient motion 
 - **Do** light new parts from above: highlight on the top edge, shadow below.
 - **Do** keep controls at least 44px, or extend the hit area as the spines do.
 - **Do** print the portal's status text and dates as the library wrote them.
-- **Do** show the library's real cover when the app holds one, and fall back to the drawn cover when it does not or the image fails.
+- **Do** show a real cover when the app holds one, and fall back to the drawn cover when it does not or the image fails.
 - **Do** confirm a renewal with a second tap on the same control, and say each step in words on its label.
 - **Do** limit hover effects to `@media (hover: hover)`.
 - **Do** check `prefers-reduced-motion` in any scripted animation, since the stylesheet rule covers CSS only.

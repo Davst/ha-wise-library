@@ -85,7 +85,7 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get(f"/api/cover/{isbn}")
         self.assertEqual(response.status, 200)
         self.assertEqual(response.content_type, "image/jpeg")
-        self.assertIn("max-age", response.headers["Cache-Control"])
+        self.assertIn("max-age=0", response.headers["Cache-Control"])
         self.assertEqual((await self.client.get("/api/cover/9780000000002")).status, 404)
         self.assertEqual((await self.client.get("/api/cover/..%2Fstorage-state")).status, 404)
 

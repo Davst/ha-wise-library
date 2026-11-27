@@ -422,3 +422,13 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         loaded = "document.fonts.ready.then(() => document.fonts.check('20px \"Libre Caslon Display\"'))"
         self.assertTrue(await self.page.evaluate(loaded))
         self.assertEqual([line for line in self.console if "Content Security Policy" in line or "Refused" in line], [])
+
+    async def test_selecting_book_animates_cover_and_respects_reduced_motion(self):
+        await self.open()
+        await self.page.locator('#shelves .book').first.click()
+        cover = self.page.locator('#feed .page').first.locator('.cover')
+        self.assertGreater(await cover.evaluate('(el) => el.getAnimations().length'), 0)
+        await self.page.emulate_media(reduced_motion='reduce')
+        await self.page.evaluate("document.querySelector('#room').close()")
+        await self.page.locator('#shelves .book').first.click()
+        self.assertEqual(await cover.evaluate('(el) => el.getAnimations().length'), 0)

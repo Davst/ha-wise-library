@@ -8,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from urllib.parse import urljoin, urlsplit
 
-from .covers import CoverError
+from .covers import CoverError, openlibrary_cover
 from .domain import PORTAL_HOST, AuthenticationError, PortalError, isbn_of
 
 log = logging.getLogger("wise_library")
@@ -272,6 +272,7 @@ class Portal:
             if self.covers:
                 shown = [item["isbn"] for item in loans + reservations]
                 await self.covers.fetch_missing(shown, lambda isbn: self._cover(page, isbn))
+                await self.covers.upgrade(shown, openlibrary_cover)
             return (
                 loans,
                 with_ids(reservations, ["title", "collection"], "hold|"),
