@@ -607,6 +607,10 @@ button.do:disabled {
   overflow: visible;
 }
 
+.prop svg.cat {
+  max-width: none;
+}
+
 .corner-web svg {
   position: absolute;
   top: 0;
@@ -644,7 +648,7 @@ button.do:disabled {
 
 @keyframes cat-breathe {
   0%, 100% { transform: scale(1, 1); }
-  45%, 55% { transform: scale(1.008, 1.035); }
+  45%, 55% { transform: scale(1.015, 1.07); }
 }
 
 @keyframes firefly {

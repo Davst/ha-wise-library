@@ -1,3 +1,7 @@
+# 0.3.7
+
+The sleeping cat is larger (138 px wide, from 100) and the mug smaller (66 px, from 100). The cat's breathing is about twice as visible. Animations are still switched off on devices that have reduce motion turned on.
+
 # 0.3.6
 
 The sleeping cat on the shelf is redrawn: dark grey with a white face under a grey cap, a white collar, tummy, haunch and paws, and the tail wrapped along the front. Only the drawing changed.
