@@ -1,3 +1,7 @@
+# 0.3.6
+
+The sleeping cat on the shelf is redrawn: dark grey with a white face under a grey cap, a white collar, tummy, haunch and paws, and the tail wrapped along the front. Only the drawing changed.
+
 # 0.3.5
 
 Arrange borrowed books in small clusters that alternate across the shelves, with open space and varied plants or ornaments. The sleeping cat and candle are always present, in positions chosen consistently from the collection. Decorations never repeat across Borrowed and Reserved; sparse rows receive more accents than full ones. Add a small cheese wedge and a delicate corner cobweb on an empty row. Books keep their due-date order and their own labels. Reserved books remain in their separate section below the borrowed shelves, with compact brass-framed shelf-edge labels for their title and library status. Layout adapts to phone, tablet and desktop widths without reshuffling on refresh.
