@@ -3,13 +3,23 @@ from datetime import date
 from urllib.parse import urlsplit
 
 PORTAL_HOST = "bibliotheek.wise.oclc.org"
-ALLOWED_HOSTS = {PORTAL_HOST, "wise.oclc.org", "iam-emea.wise.oclc.org", "emea-iam.wise.oclc.org", "login.bibliotheek.nl", "inloggen.kb.nl"}
+ALLOWED_HOSTS = {
+    PORTAL_HOST,
+    "wise.oclc.org",
+    "iam-emea.wise.oclc.org",
+    "emea-iam.wise.oclc.org",
+    "login.bibliotheek.nl",
+    "inloggen.kb.nl",
+}
+
 
 class PortalError(Exception):
     pass
 
+
 class AuthenticationError(PortalError):
     """Stop automatic retries until the user changes settings or requests a retry."""
+
 
 def parse_loans(rows, text):
     total = re.search(r"Totaal geleend:\s*(\d+)", text)
@@ -25,29 +35,40 @@ def parse_loans(rows, text):
             due_date = date(int(due[3]), int(due[2]), int(due[1])).isoformat()
         except ValueError:
             raise PortalError("A loan has an invalid return date.") from None
-        result.append({"title": row["title"], "due_date": due_date,
-                       "branch": branch[1].strip() if branch else ""})
+        result.append({"title": row["title"], "due_date": due_date, "branch": branch[1].strip() if branch else ""})
     return result
+
 
 def summarize(loans, today):
     dates = [date.fromisoformat(item["due_date"]) for item in loans]
-    return {"loan_count": len(loans), "overdue_count": sum(d < today for d in dates),
-            "due_soon_count": sum(0 <= (d - today).days <= 3 for d in dates),
-            "next_due_date": min(dates).isoformat() if dates else None}
+    return {
+        "loan_count": len(loans),
+        "overdue_count": sum(d < today for d in dates),
+        "due_soon_count": sum(0 <= (d - today).days <= 3 for d in dates),
+        "next_due_date": min(dates).isoformat() if dates else None,
+    }
+
 
 def library_only(state):
-    return {**state,
-            "cookies": [c for c in state["cookies"] if c.get("domain", "").lstrip(".") in ALLOWED_HOSTS],
-            "origins": [o for o in state["origins"] if urlsplit(o.get("origin", "")).hostname in ALLOWED_HOSTS]}
+    return {
+        **state,
+        "cookies": [c for c in state["cookies"] if c.get("domain", "").lstrip(".") in ALLOWED_HOSTS],
+        "origins": [o for o in state["origins"] if urlsplit(o.get("origin", "")).hostname in ALLOWED_HOSTS],
+    }
+
 
 def validate_session(state):
-    if not isinstance(state, dict) or not isinstance(state.get("cookies"), list) or not isinstance(state.get("origins"), list):
-        raise ValueError("Expected a Playwright storage-state file.")
+    if (
+        not isinstance(state, dict)
+        or not isinstance(state.get("cookies"), list)
+        or not isinstance(state.get("origins"), list)
+    ):
+        raise ValueError("Expected a Playwright storage-state file.")  # noqa: TRY004 -- callers catch ValueError
     if not state["cookies"] and not state["origins"]:
         raise ValueError("The session file is empty.")
-    storage = state.get('sessionStorage', {})
+    storage = state.get("sessionStorage", {})
     if not isinstance(storage, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in storage.items()):
-        raise ValueError('Invalid session storage.')
+        raise ValueError("Invalid session storage.")
     for cookie in state["cookies"]:
         if not isinstance(cookie, dict) or cookie.get("domain", "").lstrip(".") not in ALLOWED_HOSTS:
             raise ValueError("Session contains cookies outside the supported library hosts.")
