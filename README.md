@@ -6,13 +6,13 @@ A web-portal bridge for Bibliotheek AanZet, built while official Wise API access
 
 - Borrowed-book list, return dates and borrowing branch.
 - Sensors for borrowed books, overdue books, books due within three days, next return date and reservations.
-- Home Assistant sidebar panel, manual refresh, session import and connection status.
+- Home Assistant sidebar panel drawn as a bookcase: borrowed books in return order with their dates, a shelf for reservations, a one-book view, manual refresh, session import and connection status. English and Dutch, following the language Home Assistant stores in the browser; sync errors stay in English.
 - Reservation lists for standard, first-available and sequential holds. Populated reservation layouts still need live verification.
-- Links to Wise to renew books and manage reservations. This version never renews, places or cancels anything itself.
+- Renewing from the panel: Renew on a book, or Renew all, after a confirming second tap. The app drives the portal's own selection and renew button, so only books the library offers for renewal can be renewed, and it waits for the library's confirmation. Real covers are read from the loan pages and kept in the app's data folder. Placing and cancelling reservations still open Wise: the app has never seen a populated reservation list, so it does not act on one.
 
 This is an early implementation, installed and running on Home Assistant OS. Library credentials must be entered in Home Assistant before live loan syncing can be verified. The loan selectors are based on an inspected AanZet portal. Only the Dutch layout and physical materials are supported. E-books and audiobooks are not included. Sessions expire; reconnect using the helper when prompted. Home Assistant reminders are automations you create from the sensors, not notifications automatically enabled by the add-on.
 
-Local validation: 22 automated tests passed, including a real Chromium reader run with controlled network fixtures and HTTP ingress/session checks. The container image built successfully on Home Assistant OS, the ingress panel loaded, MQTT connected and all five sensors were discovered. A real-account sign-in is still pending; browser authentication has been tested with controlled fixtures.
+Local validation: the automated tests pass, including a real Chromium reader run with controlled network fixtures, HTTP ingress/session checks and browser tests of the panel. The container image built successfully on Home Assistant OS, the ingress panel loaded, MQTT connected and all five sensors were discovered. A real-account sign-in is still pending; browser authentication has been tested with controlled fixtures.
 
 ## Install in Home Assistant OS
 
@@ -63,5 +63,5 @@ The add-on polls hourly by default (minimum 15 minutes). A failed read keeps the
 
 1. Verify real-account automatic sign-in and live loans; Home Assistant installation and MQTT discovery have been verified.
 2. Verify populated hold lists with a willing test account; preserve displayed status until pickup-state parsing is proven.
-3. Add explicit, confirmed reservation/renewal actions using verified portal flows.
+3. Cancel reservations from the panel once a populated reservation list has been inspected with a willing test account. Renewing was verified on a real account on 2026-11-27: the page opens with every loan selected, one press of the renew button needs no confirm step, and it shows "De geselecteerde exemplaren zijn verlengd".
 4. Replace the portal reader with the official API when OCLC grants application access. See [API research](docs/api-research.md).
