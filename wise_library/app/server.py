@@ -47,6 +47,7 @@ class Runtime:
 
     async def refresh(self):
         self.busy = True
+        log.info('Refresh started')
         try:
             loans, reservations, refreshed = await self.portal.read()
             write_private(self.data_dir / 'storage-state.json', validate_session(library_only(refreshed)))
@@ -58,11 +59,15 @@ class Runtime:
             self.bridge.update(summary, {'loans':loans, 'reservations':reservations, 'last_success':self.last_success})
             self.error = None
             self.auth_blocked = False
+            log.info('Refresh succeeded: %d loans, %d reservations', len(loans), len(reservations))
         except AuthenticationError as error:
+            log.warning('Refresh failed; automatic refresh paused until Refresh is pressed or the app restarts: %s',
+                        error)
             self.error = str(error)
             self.auth_blocked = True
             self.bridge.unavailable()
         except PortalError as error:
+            log.warning('Refresh failed: %s', error)
             self.error = str(error)
             self.bridge.unavailable()
         except Exception as error:

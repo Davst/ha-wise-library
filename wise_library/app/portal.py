@@ -1,7 +1,13 @@
 """Read only rendered Wise pages; no private API keys or endpoint assumptions."""
 import json
+import logging
+import time
 from urllib.parse import urljoin, urlsplit
 from .domain import PORTAL_HOST, PortalError, AuthenticationError
+
+log = logging.getLogger('wise_library')
+PAGE_TIMEOUT_MS = 35000
+ALERTS = '[role="alert"], .auth0-global-message-error, [id^="error-element"]'
 
 CARD_SCRIPT = """elements => elements.map(el => ({
  title: (el.querySelector('[role="heading"][aria-level="4"],h4')?.textContent || '').trim(),
@@ -15,6 +21,18 @@ class Portal:
         self.session_path = session_path
         self.username = username
         self.password = password
+        self.trail = []
+        self.started = 0
+
+    def _record(self, response):
+        # Host and path only: query strings on the sign-in hops carry OAuth state.
+        if response.request.is_navigation_request() and response.frame.parent_frame is None:
+            self.trail.append(f'{time.monotonic() - self.started:.1f}s {response.status} {_where(response.url)}')
+
+    async def _describe(self, page):
+        heading = page.locator('h1, h2').first
+        heading = (await heading.inner_text()).strip()[:120] if await heading.count() else ''
+        return f'at {_where(page.url)}, title {await page.title()!r}, heading {heading!r}; '                f'navigations: {" -> ".join(self.trail) or "none"}'
 
     async def _sign_in(self, page):
         from playwright.async_api import TimeoutError as BrowserTimeout
@@ -23,11 +41,16 @@ class Portal:
             await page.wait_for_function("""() =>
               (location.hostname === 'bibliotheek.wise.oclc.org' && document.body.innerText.includes('Totaal geleend:')) ||
               (document.querySelector('#username') && document.querySelector('#password'))
-            """, timeout=35000)
+            """, timeout=PAGE_TIMEOUT_MS)
         except BrowserTimeout:
-            raise AuthenticationError('The library login did not load. Check the login settings or import a session.') from None
+            log.warning('Neither the loans page nor the login form appeared %s', await self._describe(page))
+            # Nothing was submitted, so this is safe to retry at the next refresh.
+            raise PortalError('The library login did not load. Will retry at the next refresh; '
+                              'details are in the app log.') from None
         if urlsplit(page.url).hostname == PORTAL_HOST and await page.get_by_text('Totaal geleend:', exact=False).is_visible():
+            log.info('Saved session is still signed in')
             return
+        log.info('Sign-in needed; login form reached at %s', _where(page.url))
         if not self.username or not self.password:
             raise AuthenticationError('Library session expired. Enter your library username and password in the app Configuration tab, or import a session.')
         parsed = urlsplit(page.url)
@@ -53,14 +76,18 @@ class Portal:
             raise PortalError('The library sign-in button could not be pressed. '
                               'Will retry at the next refresh.') from None
         try:
-            await page.wait_for_function("""() =>
+            await page.wait_for_function("""alerts =>
               (location.hostname === 'bibliotheek.wise.oclc.org' && document.body.innerText.includes('Totaal geleend:')) ||
-              Array.from(document.querySelectorAll('[role="alert"], .auth0-global-message-error, [id^="error-element"], iframe[src*="captcha"], [data-sitekey]')).some(el => el.getClientRects().length)
-            """, timeout=35000)
+              Array.from(document.querySelectorAll(alerts + ', iframe[src*="captcha"], [data-sitekey]')).some(el => el.getClientRects().length)
+            """, arg=ALERTS, timeout=PAGE_TIMEOUT_MS)
         except BrowserTimeout:
+            log.warning('Sign-in submitted but not completed %s', await self._describe(page))
             raise AuthenticationError('Sign-in was not completed. Check your credentials; an extra verification step may require manual sign-in. Automatic retries are paused.') from None
         if urlsplit(page.url).hostname != PORTAL_HOST or not await page.get_by_text('Totaal geleend:', exact=False).is_visible():
+            alerts = [text.strip() for text in await page.locator(ALERTS).all_inner_texts() if text.strip()]
+            log.warning('Sign-in refused with %s %s', alerts or 'no visible message', await self._describe(page))
             raise AuthenticationError('The library did not accept the sign-in or requires extra verification. Check the Configuration tab. Automatic retries are paused.')
+        log.info('Signed in')
 
     async def read(self):
         from playwright.async_api import async_playwright, TimeoutError as BrowserTimeout
@@ -78,6 +105,8 @@ class Portal:
                 if session_storage:
                     await context.add_init_script("const saved = " + json.dumps(session_storage) + "; if (location.origin === " + json.dumps(f'https://{PORTAL_HOST}') + ") { for (const [k,v] of Object.entries(saved)) if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k,v); }")
                 page = await context.new_page()
+                self.trail, self.started = [], time.monotonic()
+                page.on('response', self._record)
                 await page.goto(f'{self.base}/checkouts/physical-materials', wait_until='domcontentloaded', timeout=60000)
                 await self._sign_in(page)
                 rows = await page.locator('app-publication-list-item').evaluate_all(CARD_SCRIPT)
@@ -106,3 +135,8 @@ class Portal:
                 return loans, reservations, refreshed
             finally:
                 await browser.close()
+
+
+def _where(url):
+    parts = urlsplit(url)
+    return f'{parts.hostname}{parts.path}'

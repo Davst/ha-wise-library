@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from wise_library.app.server import Runtime, DEFAULTS
-from wise_library.app.domain import AuthenticationError
+from wise_library.app.domain import AuthenticationError, PortalError
 
 
 class NullBridge:
@@ -58,3 +58,17 @@ class RuntimeAuthTests(unittest.IsolatedAsyncioTestCase):
             runtime.bridge = Bridge()
             await runtime.refresh()
             self.assertTrue(getattr(runtime, 'auth_blocked', False))
+
+    async def test_expected_failures_are_logged_with_their_message(self):
+        for error in [PortalError('Reservation page could not be verified.'),
+                      AuthenticationError('Sign-in rejected. Automatic retries are paused.')]:
+            class FailingPortal:
+                async def read(self):
+                    raise error
+            with tempfile.TemporaryDirectory() as folder:
+                runtime = Runtime(dict(DEFAULTS), Path(folder))
+                runtime.portal = FailingPortal()
+                runtime.bridge = NullBridge()
+                with self.assertLogs('wise_library', level='WARNING') as logs:
+                    await runtime.refresh()
+                self.assertIn(str(error), '\n'.join(logs.output))

@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs
 from playwright.async_api import Browser
+from wise_library.app import portal
 from wise_library.app.portal import Portal
 from wise_library.app.domain import AuthenticationError, PortalError
 
@@ -23,7 +24,7 @@ style="opacity:0 !important;position:absolute !important;pointer-events:none !im
 
 class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
     async def run_portal(self, *, signed_in=False, reject=False, unsafe_action=False, saved_session=False,
-                         no_clickable_submit=False):
+                         no_clickable_submit=False, stuck=False):
         self.assertIn('username', inspect.signature(Portal).parameters)
         self.posts = []
         original = Browser.new_context
@@ -46,6 +47,11 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
                     if no_clickable_submit:
                         html = html.replace('<button type="submit" name="action" value="default">Continue</button>', '')
                     await route.fulfill(content_type='text/html', body=html)
+                elif stuck and 'iam-emea' in url:
+                    await route.fulfill(content_type='text/html', status=403,
+                                        body='<title>Blocked</title><h1>Access denied</h1>')
+                elif stuck:
+                    await route.fulfill(content_type='text/html', body='<script>location.replace("https://iam-emea.wise.oclc.org/realms/wise/auth?state=secret-state")</script>')
                 elif not logged_in:
                     await route.fulfill(content_type='text/html', body='<script>location.replace("https://inloggen.kb.nl/u/login")</script>')
                 else:
@@ -56,7 +62,7 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
             path = Path(folder) / 'state.json'
             if signed_in or saved_session:
                 path.write_text(json.dumps({'cookies':[], 'origins':[]}))
-            with patch.object(Browser, 'new_context', fixture_context):
+            with patch.object(Browser, 'new_context', fixture_context), patch.object(portal, 'PAGE_TIMEOUT_MS', 3000):
                 return await Portal('2709', path, username='example-reader', password='example-password').read()
 
     async def test_cold_start_signs_in_without_session_file(self):
@@ -76,9 +82,11 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_rejected_password_is_not_retried_or_echoed(self):
         self.assertIn('username', inspect.signature(Portal).parameters)
-        with self.assertRaises(PortalError) as raised:
+        with self.assertRaises(PortalError) as raised, self.assertLogs('wise_library', 'WARNING') as logs:
             await self.run_portal(reject=True)
         self.assertEqual(len(self.posts), 1)
+        self.assertIn('Invalid login', '\n'.join(logs.output))
+        self.assertNotIn('example-password', '\n'.join(logs.output))
         self.assertNotIn('example-password', str(raised.exception))
         self.assertNotIn('example-reader', str(raised.exception))
 
@@ -93,3 +101,13 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(PortalError):
             await self.run_portal(unsafe_action=True)
         self.assertEqual(self.posts, [])
+
+    async def test_login_that_never_loads_stays_retryable_and_logs_where_it_stopped(self):
+        with self.assertRaises(PortalError) as raised, self.assertLogs('wise_library', 'WARNING') as logs:
+            await self.run_portal(stuck=True)
+        self.assertNotIsInstance(raised.exception, AuthenticationError)
+        self.assertEqual(self.posts, [])
+        output = '\n'.join(logs.output)
+        self.assertIn('403 iam-emea.wise.oclc.org/realms/wise/auth', output)
+        self.assertIn('Access denied', output)
+        self.assertNotIn('secret-state', output)
