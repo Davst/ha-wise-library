@@ -167,15 +167,20 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(loans[0]['title'], 'Test novel')
 
     async def test_unrecognised_reservation_list_is_retryable_and_logs_which_list_and_its_text(self):
-        page = '<html><body><a>Uitloggen</a><main><h2>Reserveringen</h2><p>Geen reserveringen gevonden</p></main></body></html>'
+        page = '<html><body><a>Uitloggen</a><main><h2>Reserveringen</h2><p>Onbekende melding</p></main></body></html>'
         with self.assertRaises(PortalError) as raised, self.assertLogs('wise_library', 'WARNING') as logs:
             await self.run_portal(signed_in=True, holds_page=page)
         self.assertNotIsInstance(raised.exception, AuthenticationError)
         output = '\n'.join(logs.output)
         self.assertIn('STANDARD', output)
-        self.assertIn('Geen reserveringen gevonden', output)
+        self.assertIn('Onbekende melding', output)
 
     async def test_reservation_list_that_renders_slowly_is_still_read(self):
         loans, holds, state = await self.run_portal(signed_in=True,
                                                     holds_page=SLOW_SPA.format(body=json.dumps(HOLDS)))
+        self.assertEqual(holds, [])
+
+    async def test_empty_reservation_list_wording_used_by_wise_reads_as_no_reservations(self):
+        page = '<html><body><a>Uitloggen</a><h2>Mijn reserveringen</h2><p>Geen reserveringen gevonden</p></body></html>'
+        loans, holds, state = await self.run_portal(signed_in=True, holds_page=page)
         self.assertEqual(holds, [])

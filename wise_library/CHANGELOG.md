@@ -1,3 +1,6 @@
+# 0.2.8
+
+An empty reservation list is recognised by the wording Wise actually shows, "Geen reserveringen gevonden", as well as "Je lijst is leeg". Before, an account without reservations failed every sync.
 # 0.2.7
 
 Reservation lists now wait until cards or the empty-list message have rendered, instead of a fixed five-second window, and a list that can't be verified logs which list failed with the same stall details. The first refresh after start waits 30 seconds so the app's network has settled; before, the portal's scripts failed with ERR_NETWORK_CHANGED and the login never loaded.

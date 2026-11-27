@@ -14,7 +14,8 @@ ALERTS = '[role="alert"], .auth0-global-message-error, [id^="error-element"]'
 
 # Wise keeps hidden copies of its lists (e.g. for printing), so only rendered text and cards count.
 LOANS_SHOWN = "() => location.hostname === 'bibliotheek.wise.oclc.org' && document.body.innerText.includes('Totaal geleend:')"
-HOLDS_SHOWN = """() => document.body.innerText.includes('Uitloggen') && (document.body.innerText.includes('Je lijst is leeg') ||
+HOLDS_SHOWN = """() => document.body.innerText.includes('Uitloggen') && (
+  ['Je lijst is leeg', 'Geen reserveringen gevonden'].some(empty => document.body.innerText.includes(empty)) ||
   Array.from(document.querySelectorAll('app-publication-list-item')).some(el => el.getClientRects().length))"""
 CARD_SCRIPT = """elements => elements.filter(el => el.getClientRects().length).map(el => ({
  title: (el.querySelector('[role="heading"][aria-level="4"],h4')?.textContent || '').trim(),

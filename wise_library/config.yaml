@@ -1,5 +1,5 @@
 name: Wise Library
-version: "0.2.7"
+version: "0.2.8"
 slug: wise_library
 description: Library loans and reservations from the Wise web portal
 arch:
