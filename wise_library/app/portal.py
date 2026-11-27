@@ -21,18 +21,38 @@ class Portal:
         self.session_path = session_path
         self.username = username
         self.password = password
-        self.trail = []
-        self.started = 0
+
+    def _watch(self, page):
+        self.trail, self.failures, self.script_errors, self.pending = [], [], [], set()
+        self.started = time.monotonic()
+        page.on('response', self._record)
+        page.on('request', lambda request: self.pending.add(request))
+        page.on('requestfinished', lambda request: self.pending.discard(request))
+        page.on('requestfailed', self._failed)
+        page.on('pageerror', lambda error: self.script_errors.append(str(error)[:150]))
 
     def _record(self, response):
         # Host and path only: query strings on the sign-in hops carry OAuth state.
         if response.request.is_navigation_request() and response.frame.parent_frame is None:
             self.trail.append(f'{time.monotonic() - self.started:.1f}s {response.status} {_where(response.url)}')
 
+    def _failed(self, request):
+        self.pending.discard(request)
+        self.failures.append(f'{_where(request.url)} ({request.failure})')
+
     async def _describe(self, page):
         heading = page.locator('h1, h2').first
         heading = (await heading.inner_text()).strip()[:120] if await heading.count() else ''
-        return f'at {_where(page.url)}, title {await page.title()!r}, heading {heading!r}; '                f'navigations: {" -> ".join(self.trail) or "none"}'
+        details = [f'at {_where(page.url)}, title {await page.title()!r}, heading {heading!r}',
+                   f'navigations: {" -> ".join(self.trail) or "none"}',
+                   f'failed requests: {self.failures[-8:] or "none"}',
+                   f'pending requests: {sorted(_where(r.url) for r in self.pending)[:8] or "none"}',
+                   f'script errors: {self.script_errors[-3:] or "none"}']
+        # The login host can echo the username, so page text is only logged for Wise itself.
+        if urlsplit(page.url).hostname == PORTAL_HOST:
+            text = ' '.join((await page.locator('body').inner_text()).split())
+            details.append(f'page text: {text[:400]!r}')
+        return '; '.join(details)
 
     async def _sign_in(self, page):
         from playwright.async_api import TimeoutError as BrowserTimeout
@@ -111,8 +131,7 @@ class Portal:
                 if session_storage:
                     await context.add_init_script("const saved = " + json.dumps(session_storage) + "; if (location.origin === " + json.dumps(f'https://{PORTAL_HOST}') + ") { for (const [k,v] of Object.entries(saved)) if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k,v); }")
                 page = await context.new_page()
-                self.trail, self.started = [], time.monotonic()
-                page.on('response', self._record)
+                self._watch(page)
                 await page.goto(f'{self.base}/checkouts/physical-materials', wait_until='domcontentloaded', timeout=60000)
                 await self._sign_in(page)
                 rows = await page.locator('app-publication-list-item').evaluate_all(CARD_SCRIPT)

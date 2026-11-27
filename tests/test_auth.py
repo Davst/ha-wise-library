@@ -28,7 +28,7 @@ SLOW_SPA = '''<html><body><div role="alert">Welkom</div><div id="app"></div>
 
 class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
     async def run_portal(self, *, signed_in=False, reject=False, unsafe_action=False, saved_session=False,
-                         no_clickable_submit=False, stuck=False, slow_portal=False):
+                         no_clickable_submit=False, stuck=False, slow_portal=False, loans_page=LOANS):
         self.assertIn('username', inspect.signature(Portal).parameters)
         self.posts = []
         original = Browser.new_context
@@ -51,15 +51,18 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
                     if no_clickable_submit:
                         html = html.replace('<button type="submit" name="action" value="default">Continue</button>', '')
                     await route.fulfill(content_type='text/html', body=html)
+                elif stuck and url.endswith('/bootstrap.js'):
+                    await route.abort('timedout')
                 elif stuck and 'iam-emea' in url:
                     await route.fulfill(content_type='text/html', status=403,
-                                        body='<title>Blocked</title><h1>Access denied</h1>')
+                                        body='<title>Blocked</title><h1>Access denied</h1>'
+                                             '<script src="https://iam-emea.wise.oclc.org/bootstrap.js"></script>')
                 elif stuck:
                     await route.fulfill(content_type='text/html', body='<script>location.replace("https://iam-emea.wise.oclc.org/realms/wise/auth?state=secret-state")</script>')
                 elif not logged_in:
                     await route.fulfill(content_type='text/html', body='<script>location.replace("https://inloggen.kb.nl/u/login")</script>')
                 else:
-                    body = LOANS if '/checkouts/' in url else HOLDS
+                    body = loans_page if '/checkouts/' in url else HOLDS
                     if slow_portal:
                         body = SLOW_SPA.format(body=json.dumps(body))
                     await route.fulfill(content_type='text/html', body=body)
@@ -118,8 +121,17 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('403 iam-emea.wise.oclc.org/realms/wise/auth', output)
         self.assertIn('Access denied', output)
         self.assertNotIn('secret-state', output)
+        self.assertIn('iam-emea.wise.oclc.org/bootstrap.js (net::ERR_TIMED_OUT)', output)
 
     async def test_sign_in_succeeds_when_portal_shows_an_alert_before_the_loans(self):
         loans, holds, state = await self.run_portal(slow_portal=True)
         self.assertEqual(loans[0]['title'], 'Test novel')
         self.assertEqual(len(self.posts), 1)
+
+    async def test_signed_in_but_unrecognised_loans_page_is_retryable_and_logs_its_text(self):
+        page = '<html><body><a>Uitloggen</a><main><h2>Wat heb ik thuis</h2><p>Onbekende melding</p></main></body></html>'
+        with self.assertRaises(PortalError) as raised, self.assertLogs('wise_library', 'WARNING') as logs:
+            await self.run_portal(loans_page=page)
+        self.assertNotIsInstance(raised.exception, AuthenticationError)
+        self.assertEqual(len(self.posts), 1)
+        self.assertIn('Onbekende melding', '\n'.join(logs.output))

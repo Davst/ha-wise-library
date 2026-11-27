@@ -1,3 +1,6 @@
+# 0.2.4
+
+When a page stalls, the app log also lists failed and still-pending requests (host and path only) and page script errors; on the Wise portal itself it adds the first 400 characters of the page text. Page text is never logged from the login host.
 # 0.2.3
 
 Fix automatic sign-in being reported as refused after it succeeded. The Wise portal shows its own alert region before the loans render, which was mistaken for a login error. Alerts now count only on the login page; once the library redirects back to Wise, the app waits for the loans to render, and a slow render retries at the next refresh instead of pausing automatic refresh.
