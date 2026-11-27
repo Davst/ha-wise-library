@@ -14,15 +14,15 @@ This is an early implementation, installed and running on Home Assistant OS. Lib
 
 Local validation: 22 automated tests passed, including a real Chromium reader run with controlled network fixtures and HTTP ingress/session checks. The container image built successfully on Home Assistant OS, the ingress panel loaded, MQTT connected and all five sensors were discovered. A real-account sign-in is still pending; browser authentication has been tested with controlled fixtures.
 
-## Install locally in Home Assistant OS
+## Install in Home Assistant OS
 
 1. Install/configure a broker (for example Mosquitto) and Home Assistant's MQTT integration.
-2. Copy the `wise_library` directory into `/local_apps/wise_library` on current Home Assistant OS (`/addons/wise_library` on older versions). Reload the app/add-on store and install **Wise Library** from the local section. The initial Chromium image build may take several minutes.
-3. Set the MQTT host, port and credentials in add-on options. Default host is `core-mosquitto`. The initial supported target is the AanZet portal with `branch_id: "2709"` (the route inspected during development; not an asserted physical-branch identifier).
-4. Start the add-on and open **Library** in the sidebar.
-5. In the app Configuration tab, enter **Library username** and **Library password**, save, then restart the app. It reuses the session and signs in again only when required. A successful read supplies all five sensors. If extra verification is required, use the optional session helper below instead.
+2. Open **Settings → Apps → App store**, choose **⋮ → Repositories** and add `https://github.com/Davst/ha-wise-library`. Install **Wise Library** from the new repository section. Home Assistant builds the Chromium image on the device, which may take several minutes.
+3. Set the MQTT host, port and credentials in the app's Configuration tab. Default host is `core-mosquitto`. The initial supported target is the AanZet portal with `branch_id: "2709"` (the route inspected during development; not an asserted physical-branch identifier).
+4. In the same tab, enter **Library username** and **Library password** and save.
+5. Start the app and open **Library** in the sidebar. The first sync runs about 30 seconds after the app starts, once its network has settled. It reuses the saved session and signs in again only when required. A successful read supplies all five sensors. If extra verification is required, use the optional session helper below instead.
 
-Source is maintained in the private repository https://github.com/Davst/ha-wise-library. Install the add-on from a local copy of the source so Home Assistant does not need a GitHub credential. Updates must be copied from the private repository and rebuilt locally.
+The repository is public, so Home Assistant needs no GitHub credential. Updates are published to its `main` branch with a new version number. Home Assistant checks for them periodically; to install one straight away, choose **⋮ → Check for updates** in the App store, then **Update** on Wise Library. The image is rebuilt on the device.
 
 ## Sign in through Home Assistant
 
