@@ -47,7 +47,7 @@ class Portal:
             # Nothing was submitted, so this is safe to retry at the next refresh.
             raise PortalError('The library login did not load. Will retry at the next refresh; '
                               'details are in the app log.') from None
-        if urlsplit(page.url).hostname == PORTAL_HOST and await page.get_by_text('Totaal geleend:', exact=False).is_visible():
+        if urlsplit(page.url).hostname == PORTAL_HOST and await page.get_by_text('Totaal geleend:', exact=False).first.is_visible():
             log.info('Saved session is still signed in')
             return
         log.info('Sign-in needed; login form reached at %s', _where(page.url))
@@ -76,18 +76,24 @@ class Portal:
             raise PortalError('The library sign-in button could not be pressed. '
                               'Will retry at the next refresh.') from None
         try:
-            await page.wait_for_function("""alerts =>
-              (location.hostname === 'bibliotheek.wise.oclc.org' && document.body.innerText.includes('Totaal geleend:')) ||
+            # Wise renders its own live regions, so alerts only signal a refusal on the login host.
+            await page.wait_for_function("""alerts => location.hostname === 'bibliotheek.wise.oclc.org' ||
               Array.from(document.querySelectorAll(alerts + ', iframe[src*="captcha"], [data-sitekey]')).some(el => el.getClientRects().length)
             """, arg=ALERTS, timeout=PAGE_TIMEOUT_MS)
         except BrowserTimeout:
             log.warning('Sign-in submitted but not completed %s', await self._describe(page))
             raise AuthenticationError('Sign-in was not completed. Check your credentials; an extra verification step may require manual sign-in. Automatic retries are paused.') from None
-        if urlsplit(page.url).hostname != PORTAL_HOST or not await page.get_by_text('Totaal geleend:', exact=False).is_visible():
-            alerts = [text.strip() for text in await page.locator(ALERTS).all_inner_texts() if text.strip()]
-            log.warning('Sign-in refused with %s %s', alerts or 'no visible message', await self._describe(page))
-            raise AuthenticationError('The library did not accept the sign-in or requires extra verification. Check the Configuration tab. Automatic retries are paused.')
-        log.info('Signed in')
+        if urlsplit(page.url).hostname == PORTAL_HOST:
+            try:
+                await page.get_by_text('Totaal geleend:', exact=False).first.wait_for(timeout=PAGE_TIMEOUT_MS)
+            except BrowserTimeout:
+                log.warning('Signed in, but the loans page did not finish loading %s', await self._describe(page))
+                raise PortalError('Signed in, but the loans page did not load. Will retry at the next refresh.') from None
+            log.info('Signed in')
+            return
+        alerts = [text.strip() for text in await page.locator(ALERTS).all_inner_texts() if text.strip()]
+        log.warning('Sign-in refused with %s %s', alerts or 'no visible message', await self._describe(page))
+        raise AuthenticationError('The library did not accept the sign-in or requires extra verification. Check the Configuration tab. Automatic retries are paused.')
 
     async def read(self):
         from playwright.async_api import async_playwright, TimeoutError as BrowserTimeout

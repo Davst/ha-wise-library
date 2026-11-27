@@ -21,10 +21,14 @@ style="opacity:0 !important;position:absolute !important;pointer-events:none !im
 <label for="password">Password</label><input id="password" type="password" name="password">
 <button type="submit" name="action" value="default">Continue</button></form>{error}</body></html>'''
 
+# Wise is a single-page app: a visible live region renders before the account content does.
+SLOW_SPA = '''<html><body><div role="alert">Welkom</div><div id="app"></div>
+<script>setTimeout(() => document.getElementById('app').outerHTML = {body}, 1500)</script></body></html>'''
+
 
 class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
     async def run_portal(self, *, signed_in=False, reject=False, unsafe_action=False, saved_session=False,
-                         no_clickable_submit=False, stuck=False):
+                         no_clickable_submit=False, stuck=False, slow_portal=False):
         self.assertIn('username', inspect.signature(Portal).parameters)
         self.posts = []
         original = Browser.new_context
@@ -55,7 +59,10 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
                 elif not logged_in:
                     await route.fulfill(content_type='text/html', body='<script>location.replace("https://inloggen.kb.nl/u/login")</script>')
                 else:
-                    await route.fulfill(content_type='text/html', body=LOANS if '/checkouts/' in url else HOLDS)
+                    body = LOANS if '/checkouts/' in url else HOLDS
+                    if slow_portal:
+                        body = SLOW_SPA.format(body=json.dumps(body))
+                    await route.fulfill(content_type='text/html', body=body)
             await context.route('**/*', respond)
             return context
         with tempfile.TemporaryDirectory() as folder:
@@ -111,3 +118,8 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('403 iam-emea.wise.oclc.org/realms/wise/auth', output)
         self.assertIn('Access denied', output)
         self.assertNotIn('secret-state', output)
+
+    async def test_sign_in_succeeds_when_portal_shows_an_alert_before_the_loans(self):
+        loans, holds, state = await self.run_portal(slow_portal=True)
+        self.assertEqual(loans[0]['title'], 'Test novel')
+        self.assertEqual(len(self.posts), 1)

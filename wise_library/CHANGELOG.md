@@ -1,3 +1,6 @@
+# 0.2.3
+
+Fix automatic sign-in being reported as refused after it succeeded. The Wise portal shows its own alert region before the loans render, which was mistaken for a login error. Alerts now count only on the login page; once the library redirects back to Wise, the app waits for the loans to render, and a slow render retries at the next refresh instead of pausing automatic refresh.
 # 0.2.2
 
 The app log now records every refresh: start, success with counts, and each failure with its message. When sign-in stalls it logs where the browser stopped (host, path, page title, heading and the redirect chain with status codes and timings; never query strings or credentials), and a refused sign-in logs the login page's error text. A login page that never loads no longer pauses automatic refresh, since nothing was submitted.
