@@ -250,7 +250,7 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(size['width'], 44)
         self.assertGreaterEqual(size['height'], 88)
         await self.page.locator('#strip .spine[data-id="102"]').click()
-        await self.page.wait_for_function("document.querySelector('#strip .spine.on').dataset.id === '102'")
+        await self.page.locator('#strip .spine.on[data-id="102"]').wait_for()
         self.assertEqual(await self.page.locator('#strip .spine.hold .spine-title').inner_text(), HOLD['title'])
 
     async def test_tapping_a_book_opens_it_alone_with_what_the_library_offers(self):
