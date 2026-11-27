@@ -8,7 +8,22 @@ from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from wise_library.app.domain import PORTAL_HOST, library_only, validate_session
+from wise_library.app.portal import LOANS_SHOWN
 from wise_library.app.server import write_private
+
+
+def loans_shown(page, seconds=30):
+    """Wait for the rendered loan overview; the page may still be redirecting when Enter is pressed."""
+    from playwright.sync_api import Error as BrowserError
+
+    for _ in range(seconds):
+        try:
+            if urlsplit(page.url).hostname == PORTAL_HOST and page.evaluate(LOANS_SHOWN):
+                return True
+        except BrowserError:
+            pass  # a navigation destroyed the page context; look again
+        page.wait_for_timeout(1000)
+    return False
 
 
 def main():
@@ -29,11 +44,12 @@ def main():
             page.goto(url, wait_until="domcontentloaded")
             print("Sign in to the library in the new browser. Leave the Dutch loan overview open.")
             input('When "Totaal geleend" is visible, press Enter here to save the session: ')
-            if (
-                urlsplit(page.url).hostname != PORTAL_HOST
-                or not page.get_by_text("Totaal geleend:", exact=False).is_visible()
-            ):
-                raise SystemExit("No verified loan overview. Nothing was saved. Run the helper again after signing in.")
+            if not loans_shown(page):
+                where = urlsplit(page.url)
+                raise SystemExit(
+                    f"No verified loan overview after 30 s (page: {where.hostname}{where.path}). "
+                    "Nothing was saved. Run the helper again after signing in."
+                )
             state = library_only(context.storage_state())
             state["sessionStorage"] = page.evaluate("Object.fromEntries(Object.entries(sessionStorage))")
             validate_session(state)
