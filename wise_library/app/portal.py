@@ -1,5 +1,4 @@
 """Read only rendered Wise pages; no private API keys or endpoint assumptions."""
-import asyncio
 import json
 import logging
 import re
@@ -9,11 +8,11 @@ from .domain import PORTAL_HOST, PortalError, AuthenticationError
 
 log = logging.getLogger('wise_library')
 PAGE_TIMEOUT_MS = 35000
-NETWORK_RETRY_SECONDS = 10
 ALERTS = '[role="alert"], .auth0-global-message-error, [id^="error-element"]'
 
 # Wise keeps hidden copies of its lists (e.g. for printing), so only rendered text and cards count.
-LOANS_SHOWN = "() => location.hostname === 'bibliotheek.wise.oclc.org' && document.body.innerText.includes('Totaal geleend:')"
+LOANS_SHOWN = """() => location.hostname === 'bibliotheek.wise.oclc.org' &&
+  document.body.innerText.includes('Totaal geleend:')"""
 HOLDS_SHOWN = """() => document.body.innerText.includes('Uitloggen') && (
   ['Je lijst is leeg', 'Geen reserveringen gevonden'].some(empty => document.body.innerText.includes(empty)) ||
   Array.from(document.querySelectorAll('app-publication-list-item')).some(el => el.getClientRects().length))"""
@@ -49,27 +48,32 @@ class Portal:
         self.failures.append(f'{_where(request.url)} ({request.failure})')
 
     async def _describe(self, page):
-        heading = page.locator('h1, h2').first
-        heading = (await heading.inner_text()).strip()[:120] if await heading.count() else ''
-        details = [f'at {_where(page.url)}, title {await page.title()!r}, heading {heading!r}',
+        from playwright.async_api import Error as BrowserError
+        details = [f'at {_where(page.url)}',
                    f'navigations: {" -> ".join(self.trail) or "none"}',
                    f'failed requests: {self.failures[-8:] or "none"}',
                    f'pending requests: {sorted(_where(r.url) for r in self.pending)[:8] or "none"}',
                    f'script errors: {self.script_errors[-3:] or "none"}']
-        # The login host can echo the username, so page text is only logged for Wise itself.
-        if urlsplit(page.url).hostname == PORTAL_HOST:
-            content = page.locator('main, [role="main"]').first
-            content = content if await content.count() else page.locator('body')
-            text = ' '.join((await content.inner_text()).split())
-            details.append(f'page text: {text[:1200]!r}')
+        # A stalled page may still be navigating; describing it must never replace the caller's own error.
+        try:
+            details.append(f'title {await page.title()!r}')
+            # The login host can echo the username, so headings and page text are only logged for Wise itself.
+            if urlsplit(page.url).hostname == PORTAL_HOST:
+                heading = page.locator('h1, h2').first
+                heading = (await heading.inner_text()).strip()[:120] if await heading.count() else ''
+                content = page.locator('main, [role="main"]').first
+                content = content if await content.count() else page.locator('body')
+                text = ' '.join((await content.inner_text()).split())
+                details.append(f'heading {heading!r}; page text: {text[:1200]!r}')
+        except BrowserError:
+            details.append('the page could not be described further because it was changing')
         return '; '.join(details)
 
     async def _sign_in(self, page):
-        from playwright.async_api import TimeoutError as BrowserTimeout
+        from playwright.async_api import Error as BrowserError, TimeoutError as BrowserTimeout
         # Wait through the Wise -> IAM -> KB redirects. Never guess an auth URL.
         try:
-            await page.wait_for_function("""() =>
-              (location.hostname === 'bibliotheek.wise.oclc.org' && document.body.innerText.includes('Totaal geleend:')) ||
+            await page.wait_for_function(f"""() => ({LOANS_SHOWN})() ||
               (document.querySelector('#username') && document.querySelector('#password'))
             """, timeout=PAGE_TIMEOUT_MS)
         except BrowserTimeout:
@@ -108,7 +112,8 @@ class Portal:
         try:
             # Wise renders its own live regions, so alerts only signal a refusal on the login host.
             await page.wait_for_function("""alerts => location.hostname === 'bibliotheek.wise.oclc.org' ||
-              Array.from(document.querySelectorAll(alerts + ', iframe[src*="captcha"], [data-sitekey]')).some(el => el.getClientRects().length)
+              Array.from(document.querySelectorAll(alerts + ', iframe[src*="captcha"], [data-sitekey]'))
+                .some(el => el.getClientRects().length)
             """, arg=ALERTS, timeout=PAGE_TIMEOUT_MS)
         except BrowserTimeout:
             log.warning('Sign-in submitted but not completed %s', await self._describe(page))
@@ -118,10 +123,14 @@ class Portal:
                 await page.wait_for_function(LOANS_SHOWN, timeout=PAGE_TIMEOUT_MS)
             except BrowserTimeout:
                 log.warning('Signed in, but the loans page did not finish loading %s', await self._describe(page))
-                raise PortalError('Signed in, but the loans page did not load. Will retry at the next refresh.') from None
+                raise PortalError('Signed in, but the loans page did not load. '
+                                  'Will retry at the next refresh.') from None
             log.info('Signed in')
             return
-        alerts = [text.strip() for text in await page.locator(ALERTS).all_inner_texts() if text.strip()]
+        try:
+            alerts = [text.strip() for text in await page.locator(ALERTS).all_inner_texts() if text.strip()]
+        except BrowserError:
+            alerts = ['unreadable while the page was changing']
         log.warning('Sign-in refused with %s %s', alerts or 'no visible message', await self._describe(page))
         raise AuthenticationError('The library did not accept the sign-in or requires extra verification. Check the Configuration tab. Automatic retries are paused.')
 
@@ -140,27 +149,17 @@ class Portal:
                 # sessionStorage is excluded by Playwright's regular storage_state.
                 if session_storage:
                     await context.add_init_script("const saved = " + json.dumps(session_storage) + "; if (location.origin === " + json.dumps(f'https://{PORTAL_HOST}') + ") { for (const [k,v] of Object.entries(saved)) if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k,v); }")
-                for attempt in (1, 2):
-                    # A fresh page, because the failed one is still loading Chromium's error page.
-                    page = await context.new_page()
-                    self._watch(page)
-                    try:
-                        await page.goto(f'{self.base}/checkouts/physical-materials', wait_until='domcontentloaded',
-                                        timeout=60000)
-                        break
-                    except BrowserError as error:
-                        code = re.search(r'net::ERR_[A-Z_]+', str(error))
-                        reason = code[0] if code else type(error).__name__
-                        # Chromium reports ERR_NETWORK_CHANGED while the container network settles after start.
-                        if code and attempt == 1:
-                            log.info('The library portal is not reachable yet (%s); retrying in %s seconds',
-                                     reason, NETWORK_RETRY_SECONDS)
-                            await page.close()
-                            await asyncio.sleep(NETWORK_RETRY_SECONDS)
-                            continue
-                        log.warning('The library portal could not be reached: %s', reason)
-                        raise PortalError(f'The library portal could not be reached ({reason}). '
-                                          'Will retry at the next refresh.') from None
+                page = await context.new_page()
+                self._watch(page)
+                try:
+                    await page.goto(f'{self.base}/checkouts/physical-materials', wait_until='domcontentloaded',
+                                    timeout=60000)
+                except BrowserError as error:
+                    code = re.search(r'net::ERR_[A-Z_]+', str(error))
+                    reason = code[0] if code else type(error).__name__
+                    log.warning('The library portal could not be reached: %s', reason)
+                    raise PortalError(f'The library portal could not be reached ({reason}). '
+                                      'Will retry at the next refresh.') from None
                 await self._sign_in(page)
                 rows = await page.locator('app-publication-list-item').evaluate_all(CARD_SCRIPT)
                 loans = parse_loans(rows, await page.locator('body').inner_text())
@@ -172,7 +171,8 @@ class Portal:
                         await page.wait_for_function(HOLDS_SHOWN, timeout=PAGE_TIMEOUT_MS)
                     except BrowserTimeout:
                         log.warning('Reservation list %s could not be verified %s', kind, await self._describe(page))
-                        raise PortalError('Reservation page could not be verified. Last successful data is retained.') from None
+                        raise PortalError('Reservation page could not be verified. '
+                                          'Last successful data is retained.') from None
                     cards = await page.locator('app-publication-list-item').evaluate_all(CARD_SCRIPT)
                     for card in cards:
                         if not card['title']:

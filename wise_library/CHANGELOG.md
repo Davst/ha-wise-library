@@ -1,3 +1,6 @@
+# 0.2.9
+
+A page that changes while a stall is being described no longer replaces the refresh's own error, so a refused sign-in still pauses automatic refresh. Headings are now logged only from the Wise portal, never from the login hosts. A Refresh pressed during the 30-second startup delay is served by the first refresh instead of triggering a second one. The 0.2.6 retry of a first-load network error is removed: the startup delay is the real fix and the next refresh retries anyway. Reservation lists now require the signed-in menu and may each wait up to 35 seconds before failing.
 # 0.2.8
 
 An empty reservation list is recognised by the wording Wise actually shows, "Geen reserveringen gevonden", as well as "Je lijst is leeg". Before, an account without reservations failed every sync.

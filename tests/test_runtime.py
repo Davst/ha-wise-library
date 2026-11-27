@@ -86,12 +86,17 @@ class RuntimeAuthTests(unittest.IsolatedAsyncioTestCase):
             def start(self): pass
             def stop(self): pass
         options = {**DEFAULTS, 'library_username':'reader', 'library_password':'secret'}
-        with tempfile.TemporaryDirectory() as folder, patch.object(server, 'STARTUP_DELAY_SECONDS', 0.3):
+        with tempfile.TemporaryDirectory() as folder, patch.object(server, 'STARTUP_DELAY_SECONDS', 0.5):
             runtime = Runtime(options, Path(folder))
             runtime.portal, runtime.bridge = CountingPortal(), Bridge()
             task = asyncio.create_task(runtime.poll())
             await asyncio.sleep(0.1)
+            runtime.wake.set()
+            await asyncio.sleep(0.1)
             self.assertEqual(calls, [])
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.5)
+            # A Refresh pressed during the delay is served by the first refresh, not a second one.
             self.assertEqual(calls, [1])
             task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task

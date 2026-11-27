@@ -87,6 +87,8 @@ class Runtime:
         self.bridge.start()
         try:
             await asyncio.sleep(STARTUP_DELAY_SECONDS)
+            # The first refresh below also serves a Refresh pressed during the delay.
+            self.wake.clear()
             while True:
                 configured = bool(self.options.get('library_username') and self.options.get('library_password'))
                 if not self.auth_blocked and (configured or (self.data_dir / 'storage-state.json').exists()):

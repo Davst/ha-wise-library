@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs
-from playwright.async_api import Browser
+from playwright.async_api import Browser, Error as BrowserError
 from wise_library.app import portal
 from wise_library.app.portal import Portal
 from wise_library.app.domain import AuthenticationError, PortalError
@@ -32,10 +32,10 @@ SLOW_SPA = '''<html><body><div role="alert">Welkom</div><div id="app"></div>
 
 class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
     async def run_portal(self, *, signed_in=False, reject=False, unsafe_action=False, saved_session=False,
-                         no_clickable_submit=False, stuck=False, slow_portal=False, loans_page=LOANS, unreachable=False, holds_page=HOLDS):
+                         no_clickable_submit=False, stuck=False, slow_portal=False, loans_page=LOANS,
+                         unreachable=False, holds_page=HOLDS):
         self.assertIn('username', inspect.signature(Portal).parameters)
         self.posts = []
-        self.aborted = []
         original = Browser.new_context
         logged_in = signed_in
         async def fixture_context(browser, **kwargs):
@@ -43,8 +43,7 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
             async def respond(route):
                 nonlocal logged_in
                 url = route.request.url
-                if unreachable and (unreachable == 'always' or not self.aborted):
-                    self.aborted.append(url)
+                if unreachable:
                     await route.abort('namenotresolved')
                     return
                 if 'inloggen.kb.nl' in url:
@@ -81,7 +80,7 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
             path = Path(folder) / 'state.json'
             if signed_in or saved_session:
                 path.write_text(json.dumps({'cookies':[], 'origins':[]}))
-            with patch.object(Browser, 'new_context', fixture_context), patch.object(portal, 'PAGE_TIMEOUT_MS', 3000),                     patch.object(portal, 'NETWORK_RETRY_SECONDS', 0):
+            with patch.object(Browser, 'new_context', fixture_context), patch.object(portal, 'PAGE_TIMEOUT_MS', 3000):
                 return await Portal('2709', path, username='example-reader', password='example-password').read()
 
     async def test_cold_start_signs_in_without_session_file(self):
@@ -128,7 +127,8 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.posts, [])
         output = '\n'.join(logs.output)
         self.assertIn('403 iam-emea.wise.oclc.org/realms/wise/auth', output)
-        self.assertIn('Access denied', output)
+        self.assertIn("title 'Blocked'", output)
+        self.assertNotIn('Access denied', output)
         self.assertNotIn('secret-state', output)
         self.assertIn('iam-emea.wise.oclc.org/bootstrap.js (net::ERR_TIMED_OUT)', output)
 
@@ -138,7 +138,8 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.posts), 1)
 
     async def test_signed_in_but_unrecognised_loans_page_is_retryable_and_logs_its_text(self):
-        page = '<html><body><a>Uitloggen</a><main><h2>Wat heb ik thuis</h2><p>Onbekende melding</p></main></body></html>'
+        page = ('<html><body><a>Uitloggen</a><main><h2>Wat heb ik thuis</h2><p>Onbekende melding</p></main>'
+                '</body></html>')
         with self.assertRaises(PortalError) as raised, self.assertLogs('wise_library', 'WARNING') as logs:
             await self.run_portal(loans_page=page)
         self.assertNotIsInstance(raised.exception, AuthenticationError)
@@ -147,7 +148,7 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unreachable_portal_is_retryable_and_logs_the_network_error(self):
         with self.assertRaises(PortalError) as raised, self.assertLogs('wise_library', 'WARNING') as logs:
-            await self.run_portal(unreachable='always')
+            await self.run_portal(unreachable=True)
         self.assertNotIsInstance(raised.exception, AuthenticationError)
         self.assertIn('ERR_NAME_NOT_RESOLVED', str(raised.exception))
         self.assertIn('ERR_NAME_NOT_RESOLVED', '\n'.join(logs.output))
@@ -160,11 +161,6 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         loans, holds, state = await self.run_portal(signed_in=True, loans_page=HIDDEN_COPY)
         self.assertEqual(len(loans), 1)
         self.assertEqual(self.posts, [])
-
-    async def test_network_error_on_first_load_is_retried_once(self):
-        loans, holds, state = await self.run_portal(unreachable='once')
-        self.assertEqual(len(self.aborted), 1)
-        self.assertEqual(loans[0]['title'], 'Test novel')
 
     async def test_unrecognised_reservation_list_is_retryable_and_logs_which_list_and_its_text(self):
         page = '<html><body><a>Uitloggen</a><main><h2>Reserveringen</h2><p>Onbekende melding</p></main></body></html>'
@@ -184,3 +180,20 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         page = '<html><body><a>Uitloggen</a><h2>Mijn reserveringen</h2><p>Geen reserveringen gevonden</p></body></html>'
         loans, holds, state = await self.run_portal(signed_in=True, holds_page=page)
         self.assertEqual(holds, [])
+
+
+class NavigatingPage:
+    url = 'https://inloggen.kb.nl/u/login?state=secret-state'
+    async def title(self):
+        raise BrowserError('Execution context was destroyed, most likely because of a navigation')
+
+
+class DescribeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_page_that_navigates_while_being_described_still_yields_a_description(self):
+        reader = Portal('2709', Path('unused.json'))
+        reader.trail, reader.failures, reader.script_errors = ['0.1s 200 inloggen.kb.nl/u/login'], [], []
+        reader.pending = set()
+        description = await reader._describe(NavigatingPage())
+        self.assertIn('inloggen.kb.nl/u/login', description)
+        self.assertIn('could not be described', description)
+        self.assertNotIn('secret-state', description)

@@ -57,7 +57,7 @@ $env:WISE_DATA = '.data'
 
 Open http://127.0.0.1:8099. Local mode binds only to loopback. Without a broker the panel still works, but reports MQTT disconnected. In the add-on, HTTP is available only through Supervisor ingress; there is no exposed host port. Sessions and options remain in private `/data/session` files and are excluded from source control. The container runs the browser and HTTP service as a non-root user. No privileged mode, host network, Docker socket or Home Assistant access token is requested.
 
-The add-on polls hourly by default (minimum 15 minutes). A failed read keeps the panel's last successful result visibly stale and marks MQTT entities unavailable. Manual refresh is limited to once per minute. A successful poll saves refreshed browser storage atomically; no cookies or token values are logged. A Home Assistant restart or broker reconnect republishes discovery. State has an expiry as an extra fallback when the bridge stops updating.
+The add-on polls hourly by default (minimum 15 minutes). A failed read keeps the panel's last successful result visibly stale and marks MQTT entities unavailable. Manual refresh is limited to once per minute. A successful poll saves refreshed browser storage atomically; no cookies or token values are logged. When a refresh stalls, the app log records where it stopped; on the Wise portal that includes up to 1,200 characters of page text, which can show your name and loan titles. Nothing from the login page is logged beyond its address and title. A Home Assistant restart or broker reconnect republishes discovery. State has an expiry as an extra fallback when the bridge stops updating.
 
 ## Roadmap
 
