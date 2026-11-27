@@ -28,7 +28,7 @@ SLOW_SPA = '''<html><body><div role="alert">Welkom</div><div id="app"></div>
 
 class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
     async def run_portal(self, *, signed_in=False, reject=False, unsafe_action=False, saved_session=False,
-                         no_clickable_submit=False, stuck=False, slow_portal=False, loans_page=LOANS):
+                         no_clickable_submit=False, stuck=False, slow_portal=False, loans_page=LOANS, unreachable=False):
         self.assertIn('username', inspect.signature(Portal).parameters)
         self.posts = []
         original = Browser.new_context
@@ -38,6 +38,9 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
             async def respond(route):
                 nonlocal logged_in
                 url = route.request.url
+                if unreachable:
+                    await route.abort('namenotresolved')
+                    return
                 if 'inloggen.kb.nl' in url:
                     if route.request.method == 'POST':
                         self.posts.append(parse_qs(route.request.post_data))
@@ -135,3 +138,10 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIsInstance(raised.exception, AuthenticationError)
         self.assertEqual(len(self.posts), 1)
         self.assertIn('Onbekende melding', '\n'.join(logs.output))
+
+    async def test_unreachable_portal_is_retryable_and_logs_the_network_error(self):
+        with self.assertRaises(PortalError) as raised, self.assertLogs('wise_library', 'WARNING') as logs:
+            await self.run_portal(unreachable=True)
+        self.assertNotIsInstance(raised.exception, AuthenticationError)
+        self.assertIn('ERR_NAME_NOT_RESOLVED', str(raised.exception))
+        self.assertIn('ERR_NAME_NOT_RESOLVED', '\n'.join(logs.output))

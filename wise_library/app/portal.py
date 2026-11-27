@@ -1,6 +1,7 @@
 """Read only rendered Wise pages; no private API keys or endpoint assumptions."""
 import json
 import logging
+import re
 import time
 from urllib.parse import urljoin, urlsplit
 from .domain import PORTAL_HOST, PortalError, AuthenticationError
@@ -50,8 +51,10 @@ class Portal:
                    f'script errors: {self.script_errors[-3:] or "none"}']
         # The login host can echo the username, so page text is only logged for Wise itself.
         if urlsplit(page.url).hostname == PORTAL_HOST:
-            text = ' '.join((await page.locator('body').inner_text()).split())
-            details.append(f'page text: {text[:400]!r}')
+            content = page.locator('main, [role="main"]').first
+            content = content if await content.count() else page.locator('body')
+            text = ' '.join((await content.inner_text()).split())
+            details.append(f'page text: {text[:1200]!r}')
         return '; '.join(details)
 
     async def _sign_in(self, page):
@@ -116,7 +119,7 @@ class Portal:
         raise AuthenticationError('The library did not accept the sign-in or requires extra verification. Check the Configuration tab. Automatic retries are paused.')
 
     async def read(self):
-        from playwright.async_api import async_playwright, TimeoutError as BrowserTimeout
+        from playwright.async_api import async_playwright, Error as BrowserError, TimeoutError as BrowserTimeout
         from .domain import parse_loans
         try:
             state = json.loads(self.session_path.read_text(encoding='utf-8'))
@@ -132,7 +135,15 @@ class Portal:
                     await context.add_init_script("const saved = " + json.dumps(session_storage) + "; if (location.origin === " + json.dumps(f'https://{PORTAL_HOST}') + ") { for (const [k,v] of Object.entries(saved)) if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k,v); }")
                 page = await context.new_page()
                 self._watch(page)
-                await page.goto(f'{self.base}/checkouts/physical-materials', wait_until='domcontentloaded', timeout=60000)
+                try:
+                    await page.goto(f'{self.base}/checkouts/physical-materials', wait_until='domcontentloaded',
+                                    timeout=60000)
+                except BrowserError as error:
+                    code = re.search(r'net::ERR_[A-Z_]+', str(error))
+                    reason = code[0] if code else type(error).__name__
+                    log.warning('The library portal could not be reached: %s', reason)
+                    raise PortalError(f'The library portal could not be reached ({reason}). '
+                                      'Will retry at the next refresh.') from None
                 await self._sign_in(page)
                 rows = await page.locator('app-publication-list-item').evaluate_all(CARD_SCRIPT)
                 loans = parse_loans(rows, await page.locator('body').inner_text())

@@ -1,3 +1,6 @@
+# 0.2.5
+
+If the portal can't be reached at all (DNS or connection failure, common right after Home Assistant starts), the refresh logs the network error code and retries at the next refresh instead of logging only an error type. Stall diagnostics on the Wise portal now log up to 1,200 characters of the main content.
 # 0.2.4
 
 When a page stalls, the app log also lists failed and still-pending requests (host and path only) and page script errors; on the Wise portal itself it adds the first 400 characters of the page text. Page text is never logged from the login host.
