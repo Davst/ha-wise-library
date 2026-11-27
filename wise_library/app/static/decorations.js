@@ -39,5 +39,15 @@ export const DECORATIONS = [
     "key": "bird",
     "name": "Ceramic bird",
     "art": "<svg width=\"100\" height=\"100\" viewBox=\"0 0 100 100\" data-foot=\"100\" aria-hidden=\"true\"><path d=\"M31 89l-3 9m17-7 3 7\" stroke=\"#a57b34\" stroke-width=\"2\"/>\n<path d=\"M16 100v-3h44v3\" fill=\"#9b7642\"/>\n<path d=\"M19 81L8 57l24 11q7-3 14-1-2-18 11-21 18-4 20 13l13 5-14 6q-4 20-22 23-24 4-35-12\" fill=\"#bdc2aa\"/>\n<path d=\"M28 74q11-9 31-2-5 16-20 14\" fill=\"#8f9f8a\"/>\n<path d=\"M34 76q9-4 18-2\" fill=\"none\" stroke=\"#d9d9be\" stroke-width=\"1.5\"/>\n<circle cx=\"66\" cy=\"57\" r=\"2\" fill=\"#453f30\"/><path d=\"M78 60l12 4-14 6\" fill=\"#c6a66e\"/></svg>"
+  },
+  {
+    "key": "cheese",
+    "name": "A little cheese",
+    "art": "<svg width=\"74\" height=\"46\" viewBox=\"0 0 74 46\" data-foot=\"46\" aria-hidden=\"true\"><path d=\"M5 28L39 7l30 18-40 13z\" fill=\"#e6c576\"/><path d=\"M5 28l24 10v8L5 39z\" fill=\"#cda34f\"/><path d=\"M29 38l40-13v17l-40 4z\" fill=\"#dcb75d\"/><path d=\"M5 28l24 10 40-13\" fill=\"none\" stroke=\"#f5dda0\" stroke-width=\"1\"/><ellipse cx=\"37\" cy=\"22\" rx=\"5\" ry=\"2.8\" fill=\"#c5a057\"/><ellipse cx=\"51\" cy=\"26\" rx=\"3\" ry=\"1.7\" fill=\"#c5a057\"/><ellipse cx=\"25\" cy=\"28\" rx=\"3\" ry=\"1.8\" fill=\"#c5a057\"/><ellipse cx=\"42\" cy=\"39\" rx=\"3.5\" ry=\"2.5\" fill=\"#b99143\"/><ellipse cx=\"59\" cy=\"34\" rx=\"4\" ry=\"3\" fill=\"#b99143\"/><ellipse cx=\"17\" cy=\"36\" rx=\"2.6\" ry=\"2\" fill=\"#b48a3d\"/><path d=\"M31 44l35-4\" stroke=\"#efd58c\" stroke-width=\".8\" opacity=\".6\"/></svg>"
+  },
+  {
+    "key": "cobweb",
+    "name": "Corner cobweb",
+    "art": "<svg width=\"76\" height=\"76\" viewBox=\"0 0 76 76\" aria-hidden=\"true\"><g fill=\"none\" stroke=\"#d9d0b6\" stroke-width=\".7\" opacity=\".38\"><path d=\"M0 0v69M0 0l22 67M0 0l47 52M0 0l65 26M0 0h72\"/><path d=\"M0 14q4-3 5 1 1-5 5-4 0-5 5-5-2-4 0-6M0 29q8-6 10 2 2-10 10-9 0-10 11-10-4-8 0-12M0 45q13-9 15 1 4-14 16-12 0-15 13-16-3-12 2-18M0 62q17-12 21 1 5-20 22-16 0-19 18-22-5-17 2-25\"/></g><circle cx=\"22\" cy=\"63\" r=\".9\" fill=\"#dcd2b8\" opacity=\".35\"/></svg>"
   }
 ];

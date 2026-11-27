@@ -61,7 +61,7 @@ function loanSlot(loan, view) {
   return slot;
 }
 
-// A reservation lies beside a slip carrying the portal's own words, since its state is not parsed.
+// Reservations keep the portal's own words on a shelf-edge label; their state is not parsed.
 function holdSlot(hold, view) {
   const slot = node('li', 'slot held');
   slot.dataset.id = hold.id;
@@ -70,39 +70,104 @@ function holdSlot(hold, view) {
   open.addEventListener('click', () => view.open(hold.id));
   const book = node('span', 'book');
   book.append(coverFor(hold));
-  const slip = node('span', 'slip');
+  open.setAttribute('aria-label', `${hold.title}: ${portalText(hold)}`);
+  const board = node('div', 'board');
+  const holder = node('span', 'holder');
+  const slip = node('span', 'slip cardlet');
   slip.append(node('b', '', hold.title), node('span', '', portalText(hold)));
-  open.append(book, slip);
-  slot.append(open, node('div', 'board'));
+  slip.title = `${hold.title}: ${portalText(hold)}`;
+  holder.append(slip);
+  board.append(holder);
+  board.addEventListener('click', () => view.open(hold.id));
+  open.append(book);
+  slot.append(open, board);
   return slot;
 }
 
 function filler(prop) {
   const slot = node('li', 'slot prop');
+  slot.setAttribute('aria-hidden', 'true');
   if (prop) slot.innerHTML = prop;
   slot.append(node('div', 'board'));
   return slot;
 }
 
+function decoration(key, used) {
+  const item = DECORATIONS.find(item => item.key === key);
+  if (!item || used.has(key)) return null;
+  used.add(key);
+  const slot = filler(item.art);
+  slot.dataset.decoration = key;
+  if (key === 'cobweb') slot.classList.add('corner-web');
+  return slot;
+}
+
 export const columnsOf = list => Number(getComputedStyle(list).getPropertyValue('--cols')) || 3;
 
-function fill(list, slots, props) {
+export function renderShelves(list, loans, view, used = new Set()) {
   const columns = columnsOf(list);
-  const spare = slots.length ? (columns - (slots.length % columns)) % columns : columns;
-  list.replaceChildren(...slots, ...Array.from({length: spare}, (_, index) => filler(props[index])));
+  const perRow = Math.max(1, Math.min(columns - 1, 3));
+  const rows = Math.max(2, Math.ceil(loans.length / perRow),
+    columns <= 3 ? Math.ceil((loans.length + 3) / columns) : 0);
+  // Same books, same composition: refreshing and renewing never shuffle the props at random.
+  const seed = [...loans.map(loan => loan.id).sort().join('|')]
+    .reduce((value, char) => (Math.imul(value, 31) + char.codePointAt(0)) >>> 0, 0);
+  const candleRow = seed % rows;
+  const catRow = (candleRow + rows - 1) % rows;
+  const accents = ['pothos', 'fern', 'flowers', 'terrarium', 'mug', 'bird', 'cheese'];
+  const candidates = accents.map((_, index) => accents[(seed + index) % accents.length]);
+  const slots = [];
+  let next = 0;
+  for (let row = 0; row < rows; row++) {
+    const books = Math.ceil((loans.length - next) / (rows - row));
+    const reverse = (row + seed) % 2 === 1;
+    const places = Array(columns).fill(null);
+    const start = reverse ? columns - books : 0;
+    for (let index = 0; index < books; index++) places[start + index] = loanSlot(loans[next++], view);
+    const free = places.map((place, index) => place ? null : index).filter(index => index !== null);
+    const put = key => {
+      if (!free.length) return;
+      const slot = decoration(key, used);
+      if (!slot) return;
+      const position = reverse ? free.shift() : free.pop();
+      places[position] = slot;
+    };
+    // Reserve both companions even when their row is reached later in the composition.
+    if (row === candleRow) put('candle');
+    if (row === catRow) put('cat');
+    // Sparse rows can carry more objects; keep one open place on wider shelves.
+    const budget = Math.max(0, columns - books - (columns >= 4 || !books ? 1 : 0));
+    let placed = places.filter(place => place?.dataset.decoration).length;
+    for (const key of candidates) {
+      if (placed >= budget || !free.length) break;
+      const before = used.size;
+      put(key);
+      if (used.size > before) placed++;
+    }
+    // A web belongs in an empty row's upper corner, never under a book or on the board.
+    if (!books && !used.has('cobweb')) {
+      const corner = reverse ? columns - 1 : 0;
+      if (!places[corner]) {
+        places[corner] = decoration('cobweb', used);
+        if (reverse) places[corner].classList.add('right');
+        free.splice(free.indexOf(corner), 1);
+      }
+    }
+    slots.push(...places.map(place => place || filler()));
+  }
+  list.replaceChildren(...slots);
 }
 
-// Stable for the same collection, with different companions as the shelf fills or empties.
-function shelfProps(offset) {
-  return DECORATIONS.map((_, index) => DECORATIONS[(index + offset) % DECORATIONS.length].art);
-}
-
-export function renderShelves(list, loans, view) {
-  fill(list, loans.map(loan => loanSlot(loan, view)), shelfProps(loans.length));
-}
-
-export function renderHeld(list, holds, view) {
-  fill(list, holds.map(hold => holdSlot(hold, view)), shelfProps(holds.length + 4));
+export function renderHeld(list, holds, view, used = new Set()) {
+  const slots = holds.map(hold => holdSlot(hold, view));
+  const columns = columnsOf(list);
+  const spare = slots.length ? (columns - slots.length % columns) % columns : 0;
+  const choices = DECORATIONS.filter(item => !['cat', 'candle', 'cobweb'].includes(item.key));
+  for (let index = 0; index < spare; index++) {
+    const item = choices.find(item => !used.has(item.key));
+    slots.push(item ? decoration(item.key, used) : filler());
+  }
+  list.replaceChildren(...slots);
 }
 
 // Move each book from where it stood to where it stands now, so a renewed book travels to its new place.

@@ -106,6 +106,65 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
                 `<li class="slot prop" data-decoration="${item.key}">${item.art}<div class="board"></div></li>`).join('');
         }""")
 
+    async def test_reservation_status_is_a_compact_label_on_the_board(self):
+        await self.open()
+        for width in (390, 1100):
+            await self.page.set_viewport_size({"width": width, "height": 900})
+            dimensions = await self.page.locator('#held .slot').evaluate("""el => {
+                const board = el.querySelector('.board').getBoundingClientRect();
+                const label = el.querySelector('.slip').getBoundingClientRect();
+                return [label.top >= board.top, label.bottom <= board.bottom, label.height <= 30];
+            }""")
+            self.assertEqual(dimensions, [True, True, True])
+        await self.page.locator('#held .slip').click()
+        await self.page.locator('#room[open]').wait_for()
+        self.assertIn(HOLD['title'], await self.page.locator('#room .page').last.inner_text())
+
+    async def test_sparse_shelves_get_more_unique_decorations_per_row(self):
+        await self.use(locale='en-GB', width=1100, height=1000)
+        density = []
+        for count in (4, 15):
+            self.runtime.snapshot = snapshot([
+                {**CAMINO, 'id':str(i), 'title':f'Book {i}'} for i in range(count)
+            ], [{**HOLD, 'id':f'hold{i}'} for i in range(5)])
+            await self.open()
+            keys = await self.page.locator('[data-decoration]').evaluate_all(
+                '(els) => els.map(el => el.dataset.decoration)')
+            self.assertEqual(len(keys), len(set(keys)), keys)
+            self.assertIn('cat', keys)
+            self.assertIn('candle', keys)
+            density.append(await self.page.locator('#shelves').evaluate("""el => {
+                const rows = el.children.length / Number(getComputedStyle(el).getPropertyValue('--cols'));
+                return el.querySelectorAll('[data-decoration]').length / rows;
+            }"""))
+        self.assertGreater(density[0], density[1], density)
+
+    async def test_composed_shelves_always_include_companions_and_keep_reservations_below(self):
+        await self.open()
+        for count in (0, 1, 4, 9, 15):
+            for width in (320, 390, 820, 1100):
+                await self.page.set_viewport_size({"width": width, "height": 900})
+                await self.page.evaluate("""async count => {
+                    const {renderShelves} = await import('/static/views.js');
+                    const loans = Array.from({length:count}, (_, i) => ({
+                        id:String(i), title:'Book '+i, due_date:'2026-12-07', cover:false
+                    }));
+                    const {translator} = await import('/static/i18n.js');
+                    renderShelves(document.querySelector('#shelves'), loans, {
+                        today:new Date('2026-11-27T12:00:00'), renewed:new Set(), i18n:translator('en'), open:()=>{}
+                    });
+                }""", count)
+                self.assertEqual(await self.page.locator('#shelves [data-decoration="cat"]').count(), 1)
+                self.assertEqual(await self.page.locator('#shelves [data-decoration="candle"]').count(), 1)
+                self.assertEqual(await self.page.locator('#shelves [data-id]').evaluate_all(
+                    '(els) => els.map(e => Number(e.dataset.id))'), list(range(count)))
+                self.assertEqual(await self.page.locator('#shelves').evaluate(
+                    '(el) => el.children.length % Number(getComputedStyle(el).getPropertyValue("--cols"))'), 0)
+                self.assertEqual(await self.page.locator('#held .reserve').count(), 1)
+        boxes = await self.page.evaluate("""() => [document.querySelector('#shelves').getBoundingClientRect().bottom,
+            document.querySelector('#reserved').getBoundingClientRect().top]""")
+        self.assertLessEqual(boxes[0], boxes[1])
+
     async def test_plants_stay_still_while_tea_steam_rises(self):
         await self.show_decorations()
         plants = self.page.locator('[data-decoration="pothos"], [data-decoration="fern"], [data-decoration="flowers"]')
@@ -132,12 +191,13 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_decorations_rest_on_the_board_and_respect_reduced_motion(self):
         await self.show_decorations()
-        self.assertEqual(await self.page.locator('#shelves .prop').count(), 8)
+        self.assertEqual(await self.page.locator('#shelves .prop').count(), 10)
         self.assertEqual(await self.page.locator('[data-decoration="hourglass"]').count(), 0)
         for width in (320, 390, 820, 1100):
             await self.page.set_viewport_size({"width": width, "height": 1000})
             gaps = await self.page.locator('#shelves .prop').evaluate_all("""slots => slots.map(slot => {
                 const anchor = slot.querySelector('[data-foot]');
+                if (!anchor) return 0; // The corner web attaches overhead, not to the board.
                 const svg = slot.querySelector('svg');
                 const point = new DOMPoint(0, Number(anchor.dataset.foot)).matrixTransform(svg.getScreenCTM());
                 return slot.querySelector('.board').getBoundingClientRect().top - point.y;
@@ -317,7 +377,7 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         real = self.page.locator("#shelves .book img.real")
         await real.wait_for()
         self.assertTrue((await real.get_attribute("src")).endswith(f"/api/cover/{isbn}"))
-        await self.page.locator("#shelves .slot >> nth=1 >> svg.art").wait_for()
+        await self.page.locator("#shelves .slot[data-id] >> nth=1 >> svg.art").wait_for()
         self.assertEqual(await self.page.locator("#shelves .book img.real").count(), 1)
         await self.page.locator("#shelves .book").first.click()
         await self.page.locator("#strip .spine-art svg.art").wait_for()
@@ -327,7 +387,7 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
     async def test_reservation_shows_the_portal_words_on_the_shelf_and_when_opened(self):
         await self.open()
         slip = self.page.locator("#held .slip")
-        self.assertEqual(await slip.locator("b").inner_text(), "De zeven zussen")
+        self.assertEqual(await slip.locator("b").text_content(), "De zeven zussen")
         self.assertEqual(await slip.locator("span").inner_text(), "Ligt klaar tot 02-12-2026")
         await self.page.click("#held .reserve")
         page = self.page.locator("#room[open] .page >> nth=3")
@@ -382,10 +442,11 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual([size >= 44 for size in sizes], [True, True, True, True])
 
-    async def test_tablet_width_stands_five_books_on_a_shelf(self):
+    async def test_tablet_width_composes_complete_rows_with_companions(self):
         await self.use(locale="en-GB", width=820, height=1180)
         await self.open()
-        self.assertEqual(await self.page.locator("#shelves .slot").count(), 5)
+        self.assertEqual(await self.page.locator("#shelves .slot").count(), 10)
+        self.assertEqual(await self.page.locator("#shelves .book").count(), 3)
 
     async def test_back_control_takes_taps_on_its_label_and_the_phone_back_gesture(self):
         await self.open()
@@ -401,7 +462,7 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tapping_a_date_label_or_the_named_book_opens_that_book(self):
         await self.open()
-        await self.page.click("#shelves .slot >> nth=1 >> .cardlet")
+        await self.page.click("#shelves .slot[data-id] >> nth=1 >> .cardlet")
         self.assertEqual(await self.page.inner_text("#position"), "Borrowed · 2 of 3")
         await self.page.keyboard.press("Escape")
         await self.page.locator("#room").wait_for(state="hidden")

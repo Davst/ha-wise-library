@@ -115,8 +115,10 @@ function showBooks(snapshot) {
   state.holds = holds;
   if (shown === state.shown) return;
   state.shown = shown;
-  travel(shelves, () => renderShelves(shelves, loans, view()), moved);
-  renderHeld(held, holds, view());
+  const decorations = new Set();
+  travel(shelves, () => renderShelves(shelves, loans, view(), decorations), moved);
+  renderHeld(held, holds, view(), decorations);
+  document.querySelector('.case').classList.toggle('has-corner-web', !decorations.has('cobweb'));
   $('reserved').hidden = !holds.length;
   $('loan-count').textContent = loans.length;
   $('hold-count').textContent = holds.length;

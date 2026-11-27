@@ -134,9 +134,10 @@ button {
 .case::after {
   content: "";
   flex: 1;
-  min-height: 28px;
+  min-height: var(--row);
   --row: calc(var(--book) * 1.5 + 44px);
-  background: repeating-linear-gradient(
+  background: var(--empty-corner-web, linear-gradient(transparent, transparent)) left top / 76px 76px no-repeat,
+    repeating-linear-gradient(
     rgb(0 0 0 / .5) 0,
     transparent 30px calc(var(--row) - 34px),
     var(--lip) calc(var(--row) - 34px) calc(var(--row) - 32px),
@@ -145,6 +146,8 @@ button {
     #2a180f calc(var(--row) - 2px) var(--row)
   );
 }
+
+.case.has-corner-web { --empty-corner-web: url('./corner-web.svg'); }
 
 main {
   position: relative;
@@ -554,54 +557,67 @@ button.do:disabled {
 
 .reserve {
   display: flex;
+  justify-content: center;
   align-items: flex-end;
-  gap: 14px;
   width: 100%;
-  padding: 0 14px;
+  padding: 0;
   border: 0;
   background: none;
-  text-align: left;
 }
 
-.reserve .book {
-  flex: none;
-}
+.reserve .book { flex: none; }
 
-.slip {
-  display: grid;
-  flex: 1;
-  gap: 3px;
-  align-self: center;
-  min-width: 0;
-  padding: 10px 12px;
-  border-radius: 2px;
-  background: var(--card);
-  color: var(--ink);
-  transform: rotate(.6deg);
-  box-shadow: 0 0 0 1px #d9c9a6 inset, 0 6px 10px -4px rgb(0 0 0 / .6);
+.held .holder { max-width: calc(100% - 18px); }
+
+.slip.cardlet {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  max-width: 270px;
+  padding: 2px 7px;
+  text-align: center;
 }
 
 .slip b {
-  font: 400 16px/1.15 var(--display);
-  text-wrap: balance;
+  display: block;
+  overflow: hidden;
+  max-width: 100%;
+  font: 700 10.5px/11px var(--typed);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .slip span {
-  display: -webkit-box;
+  display: block;
   overflow: hidden;
-  font-size: 12.5px;
-  line-height: 1.4;
+  max-width: 100%;
+  font-size: 10.5px;
+  line-height: 11px;
   color: var(--ink-soft);
-  white-space: pre-line;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
 
 .prop svg {
   display: block;
   max-width: calc(100% - 12px);
   height: auto;
   overflow: visible;
+}
+
+.corner-web svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: 80%;
+}
+
+.corner-web.right svg {
+  left: auto;
+  right: 0;
+  transform: scaleX(-1);
 }
 
 .flame {
