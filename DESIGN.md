@@ -268,7 +268,7 @@ A Card block in the crown with Ink text at 13.5px, used for stale data and error
 A bottom-anchored dialog on Card, at most 520px wide, with a double ruled border, a Caslon heading, body text in Ink, fine print in Soft Ink and a file input styled like the quiet button. It closes from its corner button or from a tap outside it.
 
 ### Motion
-One easing, `cubic-bezier(.2, .9, .2, 1)`, serves state changes. Ambient motion is slow and small: the lamp glow, the candle flame and the cat's breathing. A global rule removes all CSS animation and transition under `prefers-reduced-motion: reduce`, and the scripted shelf travel and smooth scrolling check the same preference.
+One easing, `cubic-bezier(.2, .9, .2, 1)`, serves state changes. Ambient motion is slow and small: the lamp glow, candle flame, sleeping cat's breathing, terrarium glimmers, rising tea steam. Shelf artwork lives in `decorations.js`; each drawing's visible base meets its viewBox bottom, and animation leaves its contact points fixed. Plants and the ceramic bird remain still. Spare slots use a stable selection from the catalog based on collection size. A global rule removes all CSS animation and transition under `prefers-reduced-motion: reduce`, and the scripted shelf travel and smooth scrolling check the same preference.
 
 ## Do's and Don'ts
 

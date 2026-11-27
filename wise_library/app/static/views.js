@@ -1,33 +1,10 @@
+import {DECORATIONS} from './decorations.js';
 import {coverFor, tintOf, whenTinted} from './covers.js';
 import {daysLeft, mark, portalText} from './model.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const CANDLE = `<svg width="60" height="96" viewBox="0 0 60 96" aria-hidden="true">
-  <ellipse cx="30" cy="34" rx="30" ry="34" fill="url(#halo)"/>
-  <path class="flame" d="M30 20c6 8 7 13 0 20-7-7-6-12 0-20z" fill="#ffd58a"/>
-  <path d="M30 40v6" stroke="#2a1b12" stroke-width="1.5"/>
-  <rect x="22" y="46" width="16" height="38" rx="2" fill="#efe2c6"/>
-  <path d="M22 52c4 3 4 8 0 12" fill="none" stroke="#d9c9a6" stroke-width="2"/>
-  <path d="M14 84h32l-4 10H18z" fill="#b98f45"/>
-  <rect x="10" y="92" width="40" height="4" rx="2" fill="#8a6a2c"/></svg>`;
-const CAT = `<svg width="92" height="60" viewBox="0 0 92 60" aria-hidden="true">
-  <g class="sleeper" fill="#c9843f"><ellipse cx="44" cy="44" rx="34" ry="16"/>
-  <path d="M12 46c-12 2-12 12-2 13" fill="none" stroke="#c9843f" stroke-width="7" stroke-linecap="round"/>
-  <circle cx="72" cy="38" r="13"/><path d="M61 31l1-12 9 7zM83 31l-1-12-9 7z"/></g>
-  <path d="M65 40q3 3 6 0M75 40q3 3 6 0" fill="none" stroke="#6b3d14" stroke-width="1.5" stroke-linecap="round"/>
-  <path d="M30 38c8-4 18-4 26 0M26 46c10-4 24-4 34 0" fill="none" stroke="#a8682b" stroke-width="2"
-    stroke-linecap="round" opacity=".7"/></svg>`;
-const PLANT = `<svg width="62" height="92" viewBox="0 0 62 92" aria-hidden="true">
-  <g fill="none" stroke="#5f7d57" stroke-width="3" stroke-linecap="round">
-  <path d="M31 64c0-20-2-34-12-46M31 64c0-24 4-40 14-54M31 64c-4-14-12-22-22-26M31 64c4-12 12-20 22-22"/></g>
-  <g fill="#6f9066"><ellipse cx="18" cy="16" rx="7" ry="11" transform="rotate(-28 18 16)"/>
-  <ellipse cx="46" cy="9" rx="7" ry="11" transform="rotate(30 46 9)"/>
-  <ellipse cx="8" cy="37" rx="6" ry="10" transform="rotate(-62 8 37)"/>
-  <ellipse cx="54" cy="41" rx="6" ry="10" transform="rotate(60 54 41)"/></g>
-  <path d="M14 62h34l-5 30H19z" fill="#b5613e"/>
-  <rect x="11" y="58" width="40" height="8" rx="2" fill="#c97a52"/></svg>`;
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -115,12 +92,17 @@ function fill(list, slots, props) {
   list.replaceChildren(...slots, ...Array.from({length: spare}, (_, index) => filler(props[index])));
 }
 
+// Stable for the same collection, with different companions as the shelf fills or empties.
+function shelfProps(offset) {
+  return DECORATIONS.map((_, index) => DECORATIONS[(index + offset) % DECORATIONS.length].art);
+}
+
 export function renderShelves(list, loans, view) {
-  fill(list, loans.map(loan => loanSlot(loan, view)), [CANDLE, CAT, PLANT]);
+  fill(list, loans.map(loan => loanSlot(loan, view)), shelfProps(loans.length));
 }
 
 export function renderHeld(list, holds, view) {
-  fill(list, holds.map(hold => holdSlot(hold, view)), [PLANT]);
+  fill(list, holds.map(hold => holdSlot(hold, view)), shelfProps(holds.length + 4));
 }
 
 // Move each book from where it stood to where it stands now, so a renewed book travels to its new place.

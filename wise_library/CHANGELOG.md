@@ -1,3 +1,7 @@
+# 0.3.1
+
+Add trailing pothos, fern, flowers, a glass garden, warm tea and a ceramic bird as shelf companions. Plants remain still; the glass garden glimmers, tea steam rises and fades, and the curled sleeping cat breathes gently. Decoration bases sit on the shelf at every screen size, and the candle flame stays attached to its wick. Reduced-motion preferences stop ambient animations.
+
 # 0.3.0
 
 The panel is redesigned as a bookcase, and it can now renew loans itself. Borrowed books stand face-out in return order, each over a label with its return date and the days left; books due within three days or overdue carry a red ribbon and say so in words. A sentence at the top says what goes back next, and the line under it names that book and counts the reservations. Reservations have their own shelf, each beside a slip with the portal's own text; no reservation state is parsed. Tapping a book, its date label or the book named under the sentence opens a view of one book per screen, which can be swiped or stepped through by a row of spines. Account connection, session import, the last sync time and MQTT status are in a sheet behind the library-card button in the header; a tap outside the sheet closes it, and the phone's back gesture closes the one-book view.

@@ -599,17 +599,50 @@ button.do:disabled {
 
 .prop svg {
   display: block;
+  max-width: calc(100% - 12px);
+  height: auto;
+  overflow: visible;
 }
 
 .flame {
-  transform-origin: 50% 100%;
+  transform-box: view-box;
+  transform-origin: 30px 40px;
   animation: flicker 1.6s ease-in-out infinite alternate;
 }
 
-.sleeper {
-  transform-origin: 44px 60px;
-  animation: breathe 3.4s ease-in-out infinite alternate;
+/* Keep contact points fixed: pots, feet and the cat's curled tail never bob. */
+.cat-breath {
+  transform-origin: 50px 67px;
+  animation: cat-breathe 4.6s ease-in-out infinite;
 }
+
+.spark { animation: firefly 5s ease-in-out infinite; }
+.spark.second { animation-delay: -2.5s; }
+.steam-wisp {
+  transform-origin: 46px 55px;
+  opacity: 0;
+  animation: steam-rise 4.8s linear infinite;
+}
+.steam-two { animation-delay: -1.6s; }
+.steam-three { animation-delay: -3.2s; }
+
+@keyframes cat-breathe {
+  0%, 100% { transform: scale(1, 1); }
+  45%, 55% { transform: scale(1.008, 1.035); }
+}
+
+@keyframes firefly {
+  0%, 100% { opacity: .12; transform: translateY(0); }
+  50% { opacity: .85; transform: translateY(-4px); }
+}
+
+@keyframes steam-rise {
+  0% { opacity: 0; transform: translate(0, 2px) scale(.8, .7); }
+  18% { opacity: .36; }
+  65% { opacity: .2; }
+  100% { opacity: 0; transform: translate(4px, -22px) scale(1.25, 1.15); }
+}
+
 
 dialog {
   border: 0;
@@ -1115,12 +1148,6 @@ dialog::backdrop {
 
   to {
     transform: scale(.92, 1.1) rotate(3deg);
-  }
-}
-
-@keyframes breathe {
-  to {
-    transform: scaleY(1.06);
   }
 }
 

@@ -98,6 +98,56 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
     async def labels(self):
         return await self.page.locator("#shelves .slot[data-id] .cardlet").all_inner_texts()
 
+    async def show_decorations(self):
+        await self.open()
+        await self.page.evaluate("""async () => {
+            const {DECORATIONS} = await import('/static/decorations.js');
+            document.querySelector('#shelves').innerHTML = DECORATIONS.map(item =>
+                `<li class="slot prop" data-decoration="${item.key}">${item.art}<div class="board"></div></li>`).join('');
+        }""")
+
+    async def test_plants_stay_still_while_tea_steam_rises(self):
+        await self.show_decorations()
+        plants = self.page.locator('[data-decoration="pothos"], [data-decoration="fern"], [data-decoration="flowers"]')
+        self.assertEqual(await plants.evaluate_all(
+            '(items) => items.flatMap(el => el.getAnimations({subtree:true})).length'), 0)
+        steam = self.page.locator('.steam-wisp').first
+        self.assertGreater(await steam.evaluate('(el) => el.getAnimations().length'), 0)
+        self.assertEqual(await self.page.locator('.steam-wisp').count(), 3)
+
+    async def test_flame_base_stays_at_the_wick_throughout_a_flicker(self):
+        await self.show_decorations()
+        offsets = await self.page.locator('.flame').evaluate("""el => {
+            const animation = el.getAnimations()[0];
+            animation.pause();
+            return [0, 400, 800, 1200, 1600].map(time => {
+                animation.currentTime = time;
+                const matrix = new DOMMatrix(getComputedStyle(el).transform);
+                const origin = getComputedStyle(el).transformOrigin.split(' ').map(parseFloat);
+                const point = new DOMPoint(30-origin[0], 40-origin[1]).matrixTransform(matrix);
+                return Math.hypot(point.x+origin[0]-30, point.y+origin[1]-40);
+            });
+        }""")
+        self.assertTrue(all(offset < .01 for offset in offsets), offsets)
+
+    async def test_decorations_rest_on_the_board_and_respect_reduced_motion(self):
+        await self.show_decorations()
+        self.assertEqual(await self.page.locator('#shelves .prop').count(), 8)
+        self.assertEqual(await self.page.locator('[data-decoration="hourglass"]').count(), 0)
+        for width in (320, 390, 820, 1100):
+            await self.page.set_viewport_size({"width": width, "height": 1000})
+            gaps = await self.page.locator('#shelves .prop').evaluate_all("""slots => slots.map(slot => {
+                const anchor = slot.querySelector('[data-foot]');
+                const svg = slot.querySelector('svg');
+                const point = new DOMPoint(0, Number(anchor.dataset.foot)).matrixTransform(svg.getScreenCTM());
+                return slot.querySelector('.board').getBoundingClientRect().top - point.y;
+            })""")
+            self.assertTrue(all(abs(gap) < 0.75 for gap in gaps), gaps)
+        self.assertGreater(await self.page.locator('.cat-breath').evaluate('(el) => el.getAnimations().length'), 0)
+        await self.page.emulate_media(reduced_motion='reduce')
+        self.assertEqual(await self.page.locator('#shelves').evaluate(
+            '(el) => el.getAnimations({subtree:true}).length'), 0)
+
     async def states(self):
         return await self.page.locator("#shelves .slot[data-id]").evaluate_all("slots => slots.map(s => s.className)")
 
