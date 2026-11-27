@@ -1,4 +1,5 @@
 """Read only rendered Wise pages; no private API keys or endpoint assumptions."""
+import asyncio
 import json
 import logging
 import re
@@ -8,9 +9,12 @@ from .domain import PORTAL_HOST, PortalError, AuthenticationError
 
 log = logging.getLogger('wise_library')
 PAGE_TIMEOUT_MS = 35000
+NETWORK_RETRY_SECONDS = 10
 ALERTS = '[role="alert"], .auth0-global-message-error, [id^="error-element"]'
 
-CARD_SCRIPT = """elements => elements.map(el => ({
+# Wise keeps hidden copies of its lists (e.g. for printing), so only rendered text and cards count.
+LOANS_SHOWN = "() => location.hostname === 'bibliotheek.wise.oclc.org' && document.body.innerText.includes('Totaal geleend:')"
+CARD_SCRIPT = """elements => elements.filter(el => el.getClientRects().length).map(el => ({
  title: (el.querySelector('[role="heading"][aria-level="4"],h4')?.textContent || '').trim(),
  text: el.innerText
 }))"""
@@ -70,7 +74,7 @@ class Portal:
             # Nothing was submitted, so this is safe to retry at the next refresh.
             raise PortalError('The library login did not load. Will retry at the next refresh; '
                               'details are in the app log.') from None
-        if urlsplit(page.url).hostname == PORTAL_HOST and await page.get_by_text('Totaal geleend:', exact=False).first.is_visible():
+        if await page.evaluate(LOANS_SHOWN):
             log.info('Saved session is still signed in')
             return
         log.info('Sign-in needed; login form reached at %s', _where(page.url))
@@ -108,7 +112,7 @@ class Portal:
             raise AuthenticationError('Sign-in was not completed. Check your credentials; an extra verification step may require manual sign-in. Automatic retries are paused.') from None
         if urlsplit(page.url).hostname == PORTAL_HOST:
             try:
-                await page.get_by_text('Totaal geleend:', exact=False).first.wait_for(timeout=PAGE_TIMEOUT_MS)
+                await page.wait_for_function(LOANS_SHOWN, timeout=PAGE_TIMEOUT_MS)
             except BrowserTimeout:
                 log.warning('Signed in, but the loans page did not finish loading %s', await self._describe(page))
                 raise PortalError('Signed in, but the loans page did not load. Will retry at the next refresh.') from None
@@ -133,17 +137,27 @@ class Portal:
                 # sessionStorage is excluded by Playwright's regular storage_state.
                 if session_storage:
                     await context.add_init_script("const saved = " + json.dumps(session_storage) + "; if (location.origin === " + json.dumps(f'https://{PORTAL_HOST}') + ") { for (const [k,v] of Object.entries(saved)) if (sessionStorage.getItem(k) === null) sessionStorage.setItem(k,v); }")
-                page = await context.new_page()
-                self._watch(page)
-                try:
-                    await page.goto(f'{self.base}/checkouts/physical-materials', wait_until='domcontentloaded',
-                                    timeout=60000)
-                except BrowserError as error:
-                    code = re.search(r'net::ERR_[A-Z_]+', str(error))
-                    reason = code[0] if code else type(error).__name__
-                    log.warning('The library portal could not be reached: %s', reason)
-                    raise PortalError(f'The library portal could not be reached ({reason}). '
-                                      'Will retry at the next refresh.') from None
+                for attempt in (1, 2):
+                    # A fresh page, because the failed one is still loading Chromium's error page.
+                    page = await context.new_page()
+                    self._watch(page)
+                    try:
+                        await page.goto(f'{self.base}/checkouts/physical-materials', wait_until='domcontentloaded',
+                                        timeout=60000)
+                        break
+                    except BrowserError as error:
+                        code = re.search(r'net::ERR_[A-Z_]+', str(error))
+                        reason = code[0] if code else type(error).__name__
+                        # Chromium reports ERR_NETWORK_CHANGED while the container network settles after start.
+                        if code and attempt == 1:
+                            log.info('The library portal is not reachable yet (%s); retrying in %s seconds',
+                                     reason, NETWORK_RETRY_SECONDS)
+                            await page.close()
+                            await asyncio.sleep(NETWORK_RETRY_SECONDS)
+                            continue
+                        log.warning('The library portal could not be reached: %s', reason)
+                        raise PortalError(f'The library portal could not be reached ({reason}). '
+                                          'Will retry at the next refresh.') from None
                 await self._sign_in(page)
                 rows = await page.locator('app-publication-list-item').evaluate_all(CARD_SCRIPT)
                 loans = parse_loans(rows, await page.locator('body').inner_text())
@@ -152,8 +166,8 @@ class Portal:
                 for kind in ['STANDARD', 'PARTIAL', 'SEQUENTIAL']:
                     await page.goto(f'{self.base}/my-holds/physical-materials/{kind}', wait_until='domcontentloaded', timeout=60000)
                     try:
-                        await page.get_by_text('Uitloggen', exact=True).wait_for(timeout=30000)
-                        await page.locator('app-publication-list-item').first.wait_for(timeout=5000)
+                        await page.get_by_text('Uitloggen', exact=True).filter(visible=True).first.wait_for(timeout=30000)
+                        await page.locator('app-publication-list-item').filter(visible=True).first.wait_for(timeout=5000)
                     except BrowserTimeout:
                         pass
                     text = await page.locator('body').inner_text()

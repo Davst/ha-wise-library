@@ -21,6 +21,10 @@ style="opacity:0 !important;position:absolute !important;pointer-events:none !im
 <label for="password">Password</label><input id="password" type="password" name="password">
 <button type="submit" name="action" value="default">Continue</button></form>{error}</body></html>'''
 
+# Wise keeps a hidden copy of the loan list (for printing) ahead of the visible one.
+HIDDEN_COPY = LOANS.replace('<html><body>', '<html><body><div style="display:none"><p>Totaal geleend: 1</p>'
+                            '<app-publication-list-item><h4>Test novel</h4>Inleverdatum: 05-12-2026'
+                            '</app-publication-list-item></div>')
 # Wise is a single-page app: a visible live region renders before the account content does.
 SLOW_SPA = '''<html><body><div role="alert">Welkom</div><div id="app"></div>
 <script>setTimeout(() => document.getElementById('app').outerHTML = {body}, 1500)</script></body></html>'''
@@ -31,6 +35,7 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
                          no_clickable_submit=False, stuck=False, slow_portal=False, loans_page=LOANS, unreachable=False):
         self.assertIn('username', inspect.signature(Portal).parameters)
         self.posts = []
+        self.aborted = []
         original = Browser.new_context
         logged_in = signed_in
         async def fixture_context(browser, **kwargs):
@@ -38,7 +43,8 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
             async def respond(route):
                 nonlocal logged_in
                 url = route.request.url
-                if unreachable:
+                if unreachable and (unreachable == 'always' or not self.aborted):
+                    self.aborted.append(url)
                     await route.abort('namenotresolved')
                     return
                 if 'inloggen.kb.nl' in url:
@@ -75,7 +81,7 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
             path = Path(folder) / 'state.json'
             if signed_in or saved_session:
                 path.write_text(json.dumps({'cookies':[], 'origins':[]}))
-            with patch.object(Browser, 'new_context', fixture_context), patch.object(portal, 'PAGE_TIMEOUT_MS', 3000):
+            with patch.object(Browser, 'new_context', fixture_context), patch.object(portal, 'PAGE_TIMEOUT_MS', 3000),                     patch.object(portal, 'NETWORK_RETRY_SECONDS', 0):
                 return await Portal('2709', path, username='example-reader', password='example-password').read()
 
     async def test_cold_start_signs_in_without_session_file(self):
@@ -141,7 +147,21 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unreachable_portal_is_retryable_and_logs_the_network_error(self):
         with self.assertRaises(PortalError) as raised, self.assertLogs('wise_library', 'WARNING') as logs:
-            await self.run_portal(unreachable=True)
+            await self.run_portal(unreachable='always')
         self.assertNotIsInstance(raised.exception, AuthenticationError)
         self.assertIn('ERR_NAME_NOT_RESOLVED', str(raised.exception))
         self.assertIn('ERR_NAME_NOT_RESOLVED', '\n'.join(logs.output))
+
+    async def test_hidden_copy_of_the_loan_list_is_ignored_after_sign_in(self):
+        loans, holds, state = await self.run_portal(loans_page=HIDDEN_COPY)
+        self.assertEqual(len(loans), 1)
+
+    async def test_hidden_copy_of_the_loan_list_is_ignored_with_a_saved_session(self):
+        loans, holds, state = await self.run_portal(signed_in=True, loans_page=HIDDEN_COPY)
+        self.assertEqual(len(loans), 1)
+        self.assertEqual(self.posts, [])
+
+    async def test_network_error_on_first_load_is_retried_once(self):
+        loans, holds, state = await self.run_portal(unreachable='once')
+        self.assertEqual(len(self.aborted), 1)
+        self.assertEqual(loans[0]['title'], 'Test novel')

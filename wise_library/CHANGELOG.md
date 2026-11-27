@@ -1,3 +1,6 @@
+# 0.2.6
+
+Fix sign-in succeeding but the loans page never being recognised. Wise keeps a hidden copy of the loan list ahead of the visible one, and the app waited for that copy to become visible. The app now checks rendered text and reads only rendered loan and reservation cards. The same flaw made a valid saved session look signed out. A network error on the first page load (such as ERR_NETWORK_CHANGED right after start) is retried once after 10 seconds.
 # 0.2.5
 
 If the portal can't be reached at all (DNS or connection failure, common right after Home Assistant starts), the refresh logs the network error code and retries at the next refresh instead of logging only an error type. Stall diagnostics on the Wise portal now log up to 1,200 characters of the main content.
