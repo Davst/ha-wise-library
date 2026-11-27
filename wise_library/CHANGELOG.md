@@ -1,3 +1,6 @@
+# 0.2.7
+
+Reservation lists now wait until cards or the empty-list message have rendered, instead of a fixed five-second window, and a list that can't be verified logs which list failed with the same stall details. The first refresh after start waits 30 seconds so the app's network has settled; before, the portal's scripts failed with ERR_NETWORK_CHANGED and the login never loaded.
 # 0.2.6
 
 Fix sign-in succeeding but the loans page never being recognised. Wise keeps a hidden copy of the loan list ahead of the visible one, and the app waited for that copy to become visible. The app now checks rendered text and reads only rendered loan and reservation cards. The same flaw made a valid saved session look signed out. A network error on the first page load (such as ERR_NETWORK_CHANGED right after start) is retried once after 10 seconds.

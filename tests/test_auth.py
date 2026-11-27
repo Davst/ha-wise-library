@@ -32,7 +32,7 @@ SLOW_SPA = '''<html><body><div role="alert">Welkom</div><div id="app"></div>
 
 class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
     async def run_portal(self, *, signed_in=False, reject=False, unsafe_action=False, saved_session=False,
-                         no_clickable_submit=False, stuck=False, slow_portal=False, loans_page=LOANS, unreachable=False):
+                         no_clickable_submit=False, stuck=False, slow_portal=False, loans_page=LOANS, unreachable=False, holds_page=HOLDS):
         self.assertIn('username', inspect.signature(Portal).parameters)
         self.posts = []
         self.aborted = []
@@ -71,7 +71,7 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
                 elif not logged_in:
                     await route.fulfill(content_type='text/html', body='<script>location.replace("https://inloggen.kb.nl/u/login")</script>')
                 else:
-                    body = loans_page if '/checkouts/' in url else HOLDS
+                    body = loans_page if '/checkouts/' in url else holds_page
                     if slow_portal:
                         body = SLOW_SPA.format(body=json.dumps(body))
                     await route.fulfill(content_type='text/html', body=body)
@@ -165,3 +165,17 @@ class AutomaticLoginTests(unittest.IsolatedAsyncioTestCase):
         loans, holds, state = await self.run_portal(unreachable='once')
         self.assertEqual(len(self.aborted), 1)
         self.assertEqual(loans[0]['title'], 'Test novel')
+
+    async def test_unrecognised_reservation_list_is_retryable_and_logs_which_list_and_its_text(self):
+        page = '<html><body><a>Uitloggen</a><main><h2>Reserveringen</h2><p>Geen reserveringen gevonden</p></main></body></html>'
+        with self.assertRaises(PortalError) as raised, self.assertLogs('wise_library', 'WARNING') as logs:
+            await self.run_portal(signed_in=True, holds_page=page)
+        self.assertNotIsInstance(raised.exception, AuthenticationError)
+        output = '\n'.join(logs.output)
+        self.assertIn('STANDARD', output)
+        self.assertIn('Geen reserveringen gevonden', output)
+
+    async def test_reservation_list_that_renders_slowly_is_still_read(self):
+        loans, holds, state = await self.run_portal(signed_in=True,
+                                                    holds_page=SLOW_SPA.format(body=json.dumps(HOLDS)))
+        self.assertEqual(holds, [])

@@ -17,6 +17,8 @@ from .portal import Portal
 APP_DIR = Path(__file__).parent
 STATIC = APP_DIR / 'static'
 log = logging.getLogger('wise_library')
+# The app's network changes just after start, which breaks page loads with ERR_NETWORK_CHANGED.
+STARTUP_DELAY_SECONDS = 30
 DEFAULTS = {'branch_id':'2709', 'account_id':'home', 'poll_interval_minutes':60,
             'timezone':'Europe/Amsterdam', 'mqtt_host':'core-mosquitto', 'mqtt_port':1883,
             'mqtt_username':'', 'mqtt_password':'', 'library_username':'', 'library_password':''}
@@ -84,6 +86,7 @@ class Runtime:
     async def poll(self):
         self.bridge.start()
         try:
+            await asyncio.sleep(STARTUP_DELAY_SECONDS)
             while True:
                 configured = bool(self.options.get('library_username') and self.options.get('library_password'))
                 if not self.auth_blocked and (configured or (self.data_dir / 'storage-state.json').exists()):

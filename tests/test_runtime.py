@@ -1,7 +1,10 @@
+import asyncio
 import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+from wise_library.app import server
 from wise_library.app.server import Runtime, DEFAULTS
 from wise_library.app.domain import AuthenticationError, PortalError
 
@@ -72,3 +75,23 @@ class RuntimeAuthTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertLogs('wise_library', level='WARNING') as logs:
                     await runtime.refresh()
                 self.assertIn(str(error), '\n'.join(logs.output))
+
+    async def test_first_refresh_waits_for_the_network_to_settle_after_start(self):
+        calls = []
+        class CountingPortal:
+            async def read(self):
+                calls.append(1)
+                return [], [], {'cookies':[{'domain':'bibliotheek.wise.oclc.org'}], 'origins':[]}
+        class Bridge(NullBridge):
+            def start(self): pass
+            def stop(self): pass
+        options = {**DEFAULTS, 'library_username':'reader', 'library_password':'secret'}
+        with tempfile.TemporaryDirectory() as folder, patch.object(server, 'STARTUP_DELAY_SECONDS', 0.3):
+            runtime = Runtime(options, Path(folder))
+            runtime.portal, runtime.bridge = CountingPortal(), Bridge()
+            task = asyncio.create_task(runtime.poll())
+            await asyncio.sleep(0.1)
+            self.assertEqual(calls, [])
+            await asyncio.sleep(0.5)
+            self.assertEqual(calls, [1])
+            task.cancel()

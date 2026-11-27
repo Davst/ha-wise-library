@@ -14,6 +14,8 @@ ALERTS = '[role="alert"], .auth0-global-message-error, [id^="error-element"]'
 
 # Wise keeps hidden copies of its lists (e.g. for printing), so only rendered text and cards count.
 LOANS_SHOWN = "() => location.hostname === 'bibliotheek.wise.oclc.org' && document.body.innerText.includes('Totaal geleend:')"
+HOLDS_SHOWN = """() => document.body.innerText.includes('Uitloggen') && (document.body.innerText.includes('Je lijst is leeg') ||
+  Array.from(document.querySelectorAll('app-publication-list-item')).some(el => el.getClientRects().length))"""
 CARD_SCRIPT = """elements => elements.filter(el => el.getClientRects().length).map(el => ({
  title: (el.querySelector('[role="heading"][aria-level="4"],h4')?.textContent || '').trim(),
  text: el.innerText
@@ -166,15 +168,11 @@ class Portal:
                 for kind in ['STANDARD', 'PARTIAL', 'SEQUENTIAL']:
                     await page.goto(f'{self.base}/my-holds/physical-materials/{kind}', wait_until='domcontentloaded', timeout=60000)
                     try:
-                        await page.get_by_text('Uitloggen', exact=True).filter(visible=True).first.wait_for(timeout=30000)
-                        await page.locator('app-publication-list-item').filter(visible=True).first.wait_for(timeout=5000)
+                        await page.wait_for_function(HOLDS_SHOWN, timeout=PAGE_TIMEOUT_MS)
                     except BrowserTimeout:
-                        pass
-                    text = await page.locator('body').inner_text()
+                        log.warning('Reservation list %s could not be verified %s', kind, await self._describe(page))
+                        raise PortalError('Reservation page could not be verified. Last successful data is retained.') from None
                     cards = await page.locator('app-publication-list-item').evaluate_all(CARD_SCRIPT)
-                    if not cards:
-                        if 'Je lijst is leeg' not in text or 'Uitloggen' not in text:
-                            raise PortalError('Reservation page could not be verified. Last successful data is retained.')
                     for card in cards:
                         if not card['title']:
                             raise PortalError('Reservation layout has changed; a title could not be read.')
