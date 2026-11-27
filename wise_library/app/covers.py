@@ -69,9 +69,14 @@ class CoverStore:
                 continue
             checked = self.folder / f"{isbn}.openlibrary"
             if checked.exists():
+                current = dimensions(self.path(isbn).read_bytes()) if self.has(isbn) else (0, 0)
+                log.info("Cover %s: cached %dx%d; Open Library already checked", isbn, *current)
                 continue
             try:
+                log.info("Cover %s: checking Open Library", isbn)
                 data = await fetch(isbn)
+                if data is None:
+                    log.info("Cover %s: no Open Library cover for this ISBN (404); keeping existing cover", isbn)
                 if data is not None:
                     size = dimensions(data)
                     if size == (0, 0):
@@ -81,6 +86,9 @@ class CoverStore:
                         temporary = self.folder / f"{isbn}.tmp"
                         temporary.write_bytes(data)
                         temporary.replace(self.path(isbn))
+                        log.info("Cover %s: upgraded from %dx%d -> %dx%d via Open Library", isbn, *current, *size)
+                    else:
+                        log.info("Cover %s: Open Library %dx%d does not improve cached %dx%d", isbn, *size, *current)
                 checked.touch()
             except CoverError as error:
                 log.warning("Cover upgrade %s deferred: %s", isbn, error)

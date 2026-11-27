@@ -1,6 +1,10 @@
-# 0.3.4
+# 0.3.5
 
 Arrange borrowed books in small clusters that alternate across the shelves, with open space and varied plants or ornaments. The sleeping cat and candle are always present, in positions chosen consistently from the collection. Decorations never repeat across Borrowed and Reserved; sparse rows receive more accents than full ones. Add a small cheese wedge and a delicate corner cobweb on an empty row. Books keep their due-date order and their own labels. Reserved books remain in their separate section below the borrowed shelves, with compact brass-framed shelf-edge labels for their title and library status. Layout adapts to phone, tablet and desktop widths without reshuffling on refresh.
+
+## 0.3.4
+
+Bypass old browser cover caches so upgraded images appear immediately. Log Open Library lookup outcomes, image dimensions and reuse of cached results during refresh.
 
 ## 0.3.3
 
