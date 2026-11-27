@@ -316,7 +316,7 @@ class PanelTests(unittest.IsolatedAsyncioTestCase):
         await self.open()
         real = self.page.locator("#shelves .book img.real")
         await real.wait_for()
-        self.assertTrue((await real.get_attribute("src")).endswith(f"/api/cover/{isbn}"))
+        self.assertTrue((await real.get_attribute("src")).endswith(f"/api/cover/{isbn}?v=2"))
         await self.page.locator("#shelves .slot >> nth=1 >> svg.art").wait_for()
         self.assertEqual(await self.page.locator("#shelves .book img.real").count(), 1)
         await self.page.locator("#shelves .book").first.click()

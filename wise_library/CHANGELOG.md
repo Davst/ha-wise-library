@@ -1,3 +1,7 @@
+## 0.3.4
+
+Bypass old browser cover caches so upgraded images appear immediately. Log Open Library lookup outcomes, image dimensions and reuse of cached results during refresh.
+
 ## 0.3.3
 
 Covers now check Open Library by exact ISBN for a higher-resolution image, including books already cached. Smaller or missing images keep the Wise cover; temporary failures retry on a later refresh. Selecting a book gives its cover a gentle lift and settle, including navigation through the detail-view spines, with reduced motion respected.

@@ -78,7 +78,9 @@ class UpgradeTests(unittest.IsolatedAsyncioTestCase):
                 calls.append(value)
                 return image((600, 900))
 
-            await store.upgrade([isbn], secondary)
+            with self.assertLogs("wise_library", level="INFO") as logs:
+                await store.upgrade([isbn], secondary)
+            self.assertIn("100x150 -> 600x900", " ".join(logs.output))
             with Image.open(store.path(isbn)) as saved:
                 self.assertEqual(saved.size, (600, 900))
             await store.upgrade([isbn], secondary)

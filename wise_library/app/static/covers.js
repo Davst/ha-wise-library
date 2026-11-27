@@ -196,7 +196,7 @@ export function coverFor(item) {
   image.className = 'art real';
   image.alt = '';
   image.decoding = 'async';
-  image.src = `./api/cover/${item.isbn}`;
+  image.src = `./api/cover/${item.isbn}?v=2`;
   image.addEventListener('error', () => image.replaceWith(drawCover(item.title)), {once: true});
   return image;
 }
@@ -225,5 +225,5 @@ export function whenTinted(item, apply) {
     }
     apply(tints.get(item.isbn));
   });
-  image.src = `./api/cover/${item.isbn}`;
+  image.src = `./api/cover/${item.isbn}?v=2`;
 }
