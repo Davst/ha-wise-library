@@ -1,12 +1,15 @@
 """Read only rendered Wise pages; no private API keys or endpoint assumptions."""
 
+import base64
 import json
 import logging
 import re
 import time
+from contextlib import asynccontextmanager
 from urllib.parse import urljoin, urlsplit
 
-from .domain import PORTAL_HOST, AuthenticationError, PortalError
+from .covers import CoverError
+from .domain import PORTAL_HOST, AuthenticationError, PortalError, isbn_of
 
 log = logging.getLogger("wise_library")
 PAGE_TIMEOUT_MS = 35000
@@ -20,16 +23,33 @@ HOLDS_SHOWN = """() => document.body.innerText.includes('Uitloggen') && (
   Array.from(document.querySelectorAll('app-publication-list-item')).some(el => el.getClientRects().length))"""
 CARD_SCRIPT = """elements => elements.filter(el => el.getClientRects().length).map(el => ({
  title: (el.querySelector('[role="heading"][aria-level="4"],h4')?.textContent || '').trim(),
- text: el.innerText
+ text: el.innerText,
+ id: (el.querySelector('input[type="checkbox"]')?.dataset.test || '').match(/-(\\d+)$/)?.[1] || '',
+ author: (el.querySelector('p strong')?.textContent || '').trim(),
+ cover: el.querySelector('img[data-test="cover-image"]')?.src || '',
+ renewUntil: (el.querySelector('[data-test="new-due-date"]')?.textContent || '').trim()
 }))"""
+COVER_SCRIPT = """async isbn => {
+  const response = await fetch(`/cgi-bin/momredir.pl?size=280&isbn=${isbn}`, {credentials: 'same-origin'});
+  if (!response.ok) throw new Error(`status ${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length > 2097152) throw new Error('too large');
+  let text = '';
+  for (let at = 0; at < bytes.length; at += 8192) text += String.fromCharCode(...bytes.subarray(at, at + 8192));
+  return btoa(text);
+}"""
+RENEWED = "De geselecteerde exemplaren zijn verlengd"
+CHECKBOX = '[data-test="physical-materials-renew-item-checkbox-{id}"]'
+CHECKED = 'input[type="checkbox"][data-test^="physical-materials-renew-item-checkbox-"]:checked'
 
 
 class Portal:
-    def __init__(self, branch_id, session_path, username="", password=""):
+    def __init__(self, branch_id, session_path, username="", password="", covers=None):
         self.base = f"https://{PORTAL_HOST}/wise-apps/opac/branch/{branch_id}/my-account"
         self.session_path = session_path
         self.username = username
         self.password = password
+        self.covers = covers
 
     def _watch(self, page):
         self.trail, self.failures, self.script_errors, self.pending = [], [], [], set()
@@ -157,12 +177,11 @@ class Portal:
             "The library did not accept the sign-in or requires extra verification. Check the Configuration tab. Automatic retries are paused."
         )
 
-    async def read(self):
+    @asynccontextmanager
+    async def _session(self):
+        """Open the loans page in a fresh browser with the saved session, signed in, and hand back its context."""
         from playwright.async_api import Error as BrowserError
-        from playwright.async_api import TimeoutError as BrowserTimeout
         from playwright.async_api import async_playwright
-
-        from .domain import parse_loans
 
         try:
             state = json.loads(self.session_path.read_text(encoding="utf-8"))
@@ -196,32 +215,96 @@ class Portal:
                         f"The library portal could not be reached ({reason}). Will retry at the next refresh."
                     ) from None
                 await self._sign_in(page)
-                rows = await page.locator("app-publication-list-item").evaluate_all(CARD_SCRIPT)
-                loans = parse_loans(rows, await page.locator("body").inner_text())
-                reservations = []
-                # These are separate collections, not three copies of one list.
-                for kind in ["STANDARD", "PARTIAL", "SEQUENTIAL"]:
-                    await page.goto(
-                        f"{self.base}/my-holds/physical-materials/{kind}", wait_until="domcontentloaded", timeout=60000
-                    )
-                    try:
-                        await page.wait_for_function(HOLDS_SHOWN, timeout=PAGE_TIMEOUT_MS)
-                    except BrowserTimeout:
-                        log.warning("Reservation list %s could not be verified %s", kind, await self._describe(page))
-                        raise PortalError(
-                            "Reservation page could not be verified. Last successful data is retained."
-                        ) from None
-                    cards = await page.locator("app-publication-list-item").evaluate_all(CARD_SCRIPT)
-                    for card in cards:
-                        if not card["title"]:
-                            raise PortalError("Reservation layout has changed; a title could not be read.")
-                        # Preserve displayed status text rather than guessing pickup-ready states.
-                        reservations.append({"title": card["title"], "details": card["text"], "collection": kind})
-                refreshed = await context.storage_state()
-                refreshed["sessionStorage"] = await page.evaluate("Object.fromEntries(Object.entries(sessionStorage))")
-                return loans, reservations, refreshed
+                yield context, page
             finally:
                 await browser.close()
+
+    @staticmethod
+    async def _saved_state(context, page):
+        refreshed = await context.storage_state()
+        refreshed["sessionStorage"] = await page.evaluate("Object.fromEntries(Object.entries(sessionStorage))")
+        return refreshed
+
+    async def _cover(self, page, isbn):
+        """Fetch a cover from inside the signed-in page; the library refuses plain scripts but serves its own page."""
+        from playwright.async_api import Error as BrowserError
+
+        try:
+            return base64.b64decode(await page.evaluate(COVER_SCRIPT, isbn))
+        except BrowserError as error:
+            raise CoverError(str(error).splitlines()[0][:80]) from None
+
+    async def read(self):
+        from playwright.async_api import TimeoutError as BrowserTimeout
+
+        from .domain import parse_loans, with_ids
+
+        async with self._session() as (context, page):
+            rows = await page.locator("app-publication-list-item").evaluate_all(CARD_SCRIPT)
+            loans = parse_loans(rows, await page.locator("body").inner_text())
+            reservations = []
+            # These are separate collections, not three copies of one list.
+            for kind in ["STANDARD", "PARTIAL", "SEQUENTIAL"]:
+                await page.goto(
+                    f"{self.base}/my-holds/physical-materials/{kind}", wait_until="domcontentloaded", timeout=60000
+                )
+                try:
+                    await page.wait_for_function(HOLDS_SHOWN, timeout=PAGE_TIMEOUT_MS)
+                except BrowserTimeout:
+                    log.warning("Reservation list %s could not be verified %s", kind, await self._describe(page))
+                    raise PortalError(
+                        "Reservation page could not be verified. Last successful data is retained."
+                    ) from None
+                cards = await page.locator("app-publication-list-item").evaluate_all(CARD_SCRIPT)
+                for card in cards:
+                    if not card["title"]:
+                        raise PortalError("Reservation layout has changed; a title could not be read.")
+                    # Preserve displayed status text rather than guessing pickup-ready states.
+                    reservations.append(
+                        {
+                            "title": card["title"],
+                            "author": card["author"],
+                            "isbn": isbn_of(card["cover"]),
+                            "details": card["text"],
+                            "collection": kind,
+                        }
+                    )
+            if self.covers:
+                shown = [item["isbn"] for item in loans + reservations]
+                await self.covers.fetch_missing(shown, lambda isbn: self._cover(page, isbn))
+            return (
+                loans,
+                with_ids(reservations, ["title", "collection"], "hold|"),
+                await self._saved_state(context, page),
+            )
+
+    async def renew(self, loan_ids):
+        """Renew exactly these loans through the portal's own selection and renew button, then confirm it."""
+        from playwright.async_api import TimeoutError as BrowserTimeout
+
+        if not loan_ids or not all(re.fullmatch(r"[0-9]{1,12}", loan_id) for loan_id in loan_ids):
+            raise PortalError("That loan cannot be renewed from here.")
+        async with self._session() as (context, page):
+            # The page opens with every loan selected, so the selection is cleared before choosing.
+            await page.locator('[data-test="physical-materials-uncheck-all-button"]:visible').first.click(timeout=10000)
+            for loan_id in loan_ids:
+                box = page.locator(CHECKBOX.format(id=loan_id))
+                if not await box.count():
+                    raise PortalError("That loan is no longer on the account. Refresh and try again.")
+                await box.check(timeout=10000)
+            if await page.locator(CHECKED).count() != len(loan_ids):
+                raise PortalError("The wrong books were selected, so nothing was renewed.")
+            await page.locator('[data-test="physical-materials-renew-button"]:visible').first.click(timeout=10000)
+            try:
+                await page.get_by_text(RENEWED).first.wait_for(timeout=PAGE_TIMEOUT_MS)
+            except BrowserTimeout:
+                alerts = " ".join(await page.locator('[role="alert"]').all_inner_texts()).split()
+                log.warning("Renewal was not confirmed; alerts %r", " ".join(alerts)[:200])
+                raise PortalError(
+                    "The library did not confirm the renewal. Check the loan in Wise."
+                    + (f" It said: {' '.join(alerts)[:120]}" if alerts else "")
+                ) from None
+            return await self._saved_state(context, page)
 
 
 def _where(url):

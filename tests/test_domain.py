@@ -17,6 +17,25 @@ class DomainTests(unittest.TestCase):
         self.assertEqual(result[0]["due_date"], "2026-12-05")
         self.assertEqual(result[0]["branch"], "Bibliotheek Stadspolders")
 
+    def test_card_details_give_id_author_isbn_and_the_renewal_offer(self):
+        rows = [
+            {
+                "id": "7000001",
+                "title": "A sample novel",
+                "author": "Example, Ann",
+                "cover": "https://bibliotheek.wise.oclc.org/cgi-bin/momredir.pl?size=280&lid=2;ppn=3;isbn=9781234567897;key=1;",
+                "renewUntil": "Verlengen tot en met 28-12-2026",
+                "text": "Inleverdatum: 05-12-2026 | Van vestiging: Bibliotheek Example | Exemplaar: 10000000000017",
+            },
+            {"title": "No offer", "text": "Inleverdatum: 07-12-2026 | Van vestiging: Bibliotheek Example"},
+        ]
+        first, second = parse_loans(rows, "Totaal geleend: 2")
+        self.assertEqual(
+            (first["id"], first["renew_id"], first["author"], first["isbn"], first["renew_until"]),
+            ("10000000000017", "7000001", "Example, Ann", "9781234567897", "2026-12-28"),
+        )
+        self.assertEqual((second["isbn"], second["renew_until"], second["id"]), ("", None, "unknown|1"))
+
     def test_missing_cards_is_not_an_empty_account(self):
         with self.assertRaises(PortalError):
             parse_loans([], "Totaal geleend: 4")

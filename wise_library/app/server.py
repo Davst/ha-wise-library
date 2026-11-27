@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from aiohttp import web
 
 from .bridge import MqttBridge
+from .covers import CoverStore, image_type
 from .domain import AuthenticationError, PortalError, library_only, summarize, validate_session
 from .portal import Portal
 
@@ -51,6 +52,9 @@ class Runtime:
         self.error = None
         self.snapshot = None
         self.busy = False
+        self.renewal = None
+        self.tasks = set()
+        self.covers = CoverStore(data_dir / "covers")
         self.auth_blocked = False
         self.last_requested = 0
         self.wake = asyncio.Event()
@@ -60,6 +64,7 @@ class Runtime:
             data_dir / "storage-state.json",
             username=options.get("library_username", ""),
             password=options.get("library_password", ""),
+            covers=self.covers,
         )
 
     async def refresh(self):
@@ -68,6 +73,8 @@ class Runtime:
         try:
             loans, reservations, refreshed = await self.portal.read()
             write_private(self.data_dir / "storage-state.json", validate_session(library_only(refreshed)))
+            for item in loans + reservations:
+                item["cover"] = self.covers.has(item.get("isbn", ""))
             now = datetime.now(ZoneInfo(self.options["timezone"]))
             summary = summarize(loans, now.date())
             summary["reservation_count"] = len(reservations)
@@ -102,6 +109,30 @@ class Runtime:
             self.bridge.unavailable()
         finally:
             self.busy = False
+
+    async def renew(self, ids):
+        """Renew loans through the portal while the panel watches `renewal`; a refresh then shows the new dates."""
+        self.busy = True
+        number = (self.renewal or {}).get("n", 0) + 1
+        self.renewal = {"n": number, "ids": ids, "state": "running", "message": ""}
+        log.info("Renewal started for %d loan(s)", len(ids))
+        try:
+            refreshed = await self.portal.renew(ids)
+            write_private(self.data_dir / "storage-state.json", validate_session(library_only(refreshed)))
+            self.renewal = {"n": number, "ids": ids, "state": "done", "message": ""}
+            log.info("Renewal confirmed by the library")
+        except PortalError as error:
+            log.warning("Renewal failed: %s", error)
+            self.renewal = {"n": number, "ids": ids, "state": "failed", "message": str(error)}
+        except Exception as error:  # noqa: BLE001 -- a failed renewal must not stop the app
+            frames = traceback.extract_tb(error.__traceback__)
+            frame = [f for f in frames if Path(f.filename).is_relative_to(APP_DIR)][-1]
+            log.error("Renewal failed: %s at %s:%s", type(error).__name__, Path(frame.filename).name, frame.lineno)
+            message = "Renewal failed. Check the loan in Wise. Details are in the app log."
+            self.renewal = {"n": number, "ids": ids, "state": "failed", "message": message}
+        finally:
+            self.busy = False
+            self.wake.set()
 
     async def poll(self):
         self.bridge.start()
@@ -139,7 +170,7 @@ def create_app(runtime, local=False):
         ):
             raise web.HTTPForbidden(text="Reload the panel before trying again.")
         response = await handler(request)
-        response.headers["Cache-Control"] = "no-store"
+        response.headers.setdefault("Cache-Control", "no-store")
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Content-Security-Policy"] = (
@@ -163,6 +194,7 @@ def create_app(runtime, local=False):
                 "mqtt_connected": runtime.bridge.connected,
                 "session_present": (runtime.data_dir / "storage-state.json").exists(),
                 "snapshot": runtime.snapshot,
+                "renewal": runtime.renewal,
                 "portal_url": f"https://bibliotheek.wise.oclc.org/wise-apps/opac/branch/{runtime.options['branch_id']}/my-account",
             }
         )
@@ -179,6 +211,40 @@ def create_app(runtime, local=False):
         runtime.auth_blocked = False
         runtime.wake.set()
         return web.json_response({"ok": True})
+
+    async def cover(request):
+        isbn = request.match_info["isbn"].upper()
+        path = runtime.covers.path(isbn)
+        if not path or not path.exists():
+            raise web.HTTPNotFound()
+        data = path.read_bytes()
+        kind = image_type(data)
+        if not kind:
+            raise web.HTTPNotFound()
+        return web.Response(body=data, content_type=kind, headers={"Cache-Control": "private, max-age=604800"})
+
+    async def renew(request):
+        try:
+            ids = (await request.json())["ids"]
+        except (ValueError, TypeError, KeyError):
+            raise web.HTTPBadRequest(text="Send the loans to renew.") from None
+        offered = {
+            loan["id"]: loan.get("renew_id")
+            for loan in (runtime.snapshot or {}).get("loans", [])
+            if loan.get("renew_until") and loan.get("renew_id")
+        }
+        if not isinstance(ids, list) or not ids or len(ids) > 20 or not all(isinstance(i, str) for i in ids):
+            raise web.HTTPBadRequest(text="Send the loans to renew.")
+        if not set(ids) <= offered.keys():
+            raise web.HTTPConflict(text="The library does not offer a renewal for that book right now.")
+        if runtime.busy:
+            raise web.HTTPConflict(text="A refresh is running; try again shortly.")
+        runtime.busy = True
+        runtime.auth_blocked = False
+        task = asyncio.create_task(runtime.renew([offered[loan_id] for loan_id in ids]))
+        runtime.tasks.add(task)
+        task.add_done_callback(runtime.tasks.discard)
+        return web.json_response({"ok": True}, status=202)
 
     async def refresh(request):
         configured = bool(runtime.options.get("library_username") and runtime.options.get("library_password"))
@@ -198,6 +264,8 @@ def create_app(runtime, local=False):
     app.router.add_get("/api/status", status)
     app.router.add_post("/api/session", session)
     app.router.add_post("/api/refresh", refresh)
+    app.router.add_post("/api/renew", renew)
+    app.router.add_get("/api/cover/{isbn:[0-9]{9}[0-9Xx]|[0-9]{13}}", cover)
     app.router.add_static("/static/", STATIC)
     return app
 

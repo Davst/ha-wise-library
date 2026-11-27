@@ -5,6 +5,7 @@ from pathlib import Path
 
 from aiohttp.test_utils import TestClient, TestServer
 
+from wise_library.app.covers import CoverStore
 from wise_library.app.server import create_app
 
 
@@ -17,10 +18,18 @@ class FakeRuntime:
         self.error = None
         self.snapshot = None
         self.busy = False
+        self.renewal = None
+        self.renewed = []
+        self.tasks = set()
+        self.covers = CoverStore(path / "covers")
         self.last_requested = 0
         self.wake = asyncio.Event()
         self.auth_blocked = False
         self.bridge = type("Bridge", (), {"connected": False})()
+
+    async def renew(self, ids):
+        self.renewed.append(ids)
+        self.busy = False
 
 
 class WebTests(unittest.IsolatedAsyncioTestCase):
@@ -69,6 +78,42 @@ class WebTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 400)
         self.assertFalse((self.runtime.data_dir / "storage-state.json").exists())
+
+    async def test_cover_is_served_from_the_apps_own_store_and_cached(self):
+        isbn = "9780306406157"
+        (Path(self.tmp.name) / "covers" / f"{isbn}.img").write_bytes(b"\xff\xd8\xff" + b"jpeg bytes")
+        response = await self.client.get(f"/api/cover/{isbn}")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.content_type, "image/jpeg")
+        self.assertIn("max-age", response.headers["Cache-Control"])
+        self.assertEqual((await self.client.get("/api/cover/9780000000002")).status, 404)
+        self.assertEqual((await self.client.get("/api/cover/..%2Fstorage-state")).status, 404)
+
+    async def test_renew_needs_csrf_and_only_renews_loans_the_library_offers(self):
+        self.runtime.snapshot = {
+            "loans": [
+                {"id": "A1", "renew_id": "7000001", "title": "A", "renew_until": "2026-12-28"},
+                {"id": "B1", "renew_id": "14642373", "title": "B", "renew_until": None},
+            ]
+        }
+        headers = {"X-CSRF-Token": "test-csrf"}
+        self.assertEqual((await self.client.post("/api/renew", json={"ids": ["A1"]})).status, 403)
+        self.assertEqual((await self.client.post("/api/renew", json={"ids": ["B1"]}, headers=headers)).status, 409)
+        self.assertEqual((await self.client.post("/api/renew", json={"ids": ["999"]}, headers=headers)).status, 409)
+        self.assertEqual((await self.client.post("/api/renew", json={"ids": []}, headers=headers)).status, 400)
+        self.assertEqual((await self.client.post("/api/renew", json={"nope": 1}, headers=headers)).status, 400)
+        self.assertEqual(self.runtime.renewed, [])
+        response = await self.client.post("/api/renew", json={"ids": ["A1"]}, headers=headers)
+        self.assertEqual(response.status, 202)
+        await asyncio.sleep(0.05)
+        self.assertEqual(self.runtime.renewed, [["7000001"]])  # the portal's own loan number, not the app's id
+
+    async def test_renew_is_refused_while_a_refresh_is_running(self):
+        self.runtime.snapshot = {"loans": [{"id": "1", "renew_id": "9", "title": "A", "renew_until": "2026-12-28"}]}
+        self.runtime.busy = True
+        response = await self.client.post("/api/renew", json={"ids": ["1"]}, headers={"X-CSRF-Token": "test-csrf"})
+        self.assertEqual(response.status, 409)
+        self.assertEqual(self.runtime.renewed, [])
 
     async def test_ingress_mode_rejects_direct_clients(self):
         other = TestClient(TestServer(create_app(self.runtime, local=False)))
